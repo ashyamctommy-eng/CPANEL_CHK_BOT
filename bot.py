@@ -17,7 +17,7 @@ import aiohttp, aiofiles, requests
 BOT_TOKEN = "8766173350:AAEkL0DkttY9zsCKZj8txy05uGbfB-IgpYg"
 OWNER_ID = 5541778617
 OWNER_USERNAME = "@Poriot_ke"
-BOT_BRAND, DEV_LINE = "✨ SHOPIFY CHECKER", f"🔱 Dev:👑 𝙋𝙊𝙍𝙄𝙊𝙏_𝙆𝙀 👑  {@Poriot_ke}"
+BOT_BRAND, DEV_LINE = "✨ SHOPIFY CHECKER", f"🔱 Dev:👑 𝙋𝙊𝙍𝙄𝙊𝙏_𝙆𝙀 👑  {OWNER_USERNAME}"
 PREMIUM_FILE, PROXY_FILE, USER_PROXY_FILE = "premium.txt", "proxy.txt", "user_proxy.json"
 CODES_FILE = "codes.json"
 PREMIUM_USERS_FILE = "premium_users.json"
