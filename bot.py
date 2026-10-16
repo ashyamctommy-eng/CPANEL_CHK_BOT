@@ -2,13 +2,6 @@
 import sys, asyncio, os, time, random, re, json, string, hashlib
 
 from datetime import datetime, timedelta
-try:
-    import telethon, aiohttp, aiofiles, requests
-except:
-    import subprocess
-    subprocess.check_call([sys.executable, "-m", "pip", "install", "telethon", "aiohttp", "aiofiles", "requests"])
-    print("Restart the script.")
-    sys.exit(0)
 
 from telethon import TelegramClient, events, Button
 import aiohttp, aiofiles, requests
