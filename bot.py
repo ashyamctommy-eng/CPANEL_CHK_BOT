@@ -81,7 +81,7 @@ def is_premium_user(user_id):
     data = load_premium_users_data()
     user_id = str(user_id)
     if user_id in data:
-        expiry = datetime.fromisoformat(data[user_id]['expiry'])
+        expiry = datetime.strptime(data[user_id]['expiry'].replace('T', ' ').split('.')[0], "%Y-%m-%d %H:%M:%S")
         if datetime.now() < expiry:
             return True
         else:
