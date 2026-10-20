@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # language: Python, file: bot.py, target: cPanel/Python 3.6, python3
-# *👑Poriot_ke👑 Multi-Check Bot (Complete Suite & Inline Admin Panel)*
+# *👑Poriot_ke👑 Multi-Check Bot (Photo Banner Output & Inline Submenus)*
 
 import os
 import time
@@ -22,7 +22,7 @@ SITES_FILE = "sites.txt"
 PROXY_FILE = "proxies.txt"
 DB_FILE = "checker_bot.db"
 STRIPE_API_URL = "http://147.93.53.240:8973/liladmin-str"
-START_IMG_URL = "https://i.ibb.co/L89Gz7X/banner.jpg"  # Default banner image URL
+BANNER_URL = "https://i.ibb.co/L89Gz7X/banner.jpg"
 
 _CONFIG = {"paypal_amount": "6.00", "sites_pool_enabled": True}
 
@@ -173,6 +173,28 @@ def send_message(chat_id, text, reply_markup=None):
         requests.post(url, json=payload, timeout=10)
     except Exception:
         pass
+
+def send_photo(chat_id, photo_url, caption, reply_markup=None):
+    url = f"https://api.telegram.org/bot{TG_TOKEN}/sendPhoto"
+    payload = {"chat_id": chat_id, "photo": photo_url, "caption": caption, "parse_mode": "HTML"}
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
+    try:
+        r = requests.post(url, json=payload, timeout=10)
+        if not r.json().get("ok"):
+            send_message(chat_id, caption, reply_markup)
+    except Exception:
+        send_message(chat_id, caption, reply_markup)
+
+def edit_message_caption(chat_id, message_id, caption, reply_markup=None):
+    url = f"https://api.telegram.org/bot{TG_TOKEN}/editMessageCaption"
+    payload = {"chat_id": chat_id, "message_id": message_id, "caption": caption, "parse_mode": "HTML"}
+    if reply_markup:
+        payload["reply_markup"] = json.dumps(reply_markup)
+    try:
+        requests.post(url, json=payload, timeout=10)
+    except Exception:
+        edit_message_text(chat_id, message_id, caption, reply_markup)
 
 def edit_message_text(chat_id, message_id, text, reply_markup=None):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/editMessageText"
@@ -332,7 +354,7 @@ def scan_gateway(url):
     except Exception:
         return {"url": url, "gateways": [], "captcha": False, "cloudflare": False, "status": 0, "ok": False}
 
-# Comprehensive Message & Callback Handler
+# Callback Handler
 def handle_update(update):
     if "callback_query" in update:
         cq = update["callback_query"]
@@ -345,7 +367,6 @@ def handle_update(update):
         user = cq.get("from", {})
         uname = user.get("username", "User")
 
-        # Full Commands List (Complete Restored Suite)
         if data == "menu_cmds":
             text = (
                 "<b><i>🌐 C O M M A N D   M E N U 🌐</i></b>\n"
@@ -371,7 +392,7 @@ def handle_update(update):
                 "<b>====================================</b>"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "menu_start"}]]}
-            edit_message_text(chat_id, msg_id, text, markup)
+            edit_message_caption(chat_id, msg_id, text, markup)
             answer_callback(cq_id)
 
         elif data == "menu_proxy":
@@ -387,7 +408,7 @@ def handle_update(update):
                 "<b>Proxy Will Be Tested Before Saving</b>"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "menu_start"}]]}
-            edit_message_text(chat_id, msg_id, text, markup)
+            edit_message_caption(chat_id, msg_id, text, markup)
             answer_callback(cq_id)
 
         elif data == "menu_profile":
@@ -405,10 +426,9 @@ def handle_update(update):
                 "<b>====================================</b>"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "menu_start"}]]}
-            edit_message_text(chat_id, msg_id, text, markup)
+            edit_message_caption(chat_id, msg_id, text, markup)
             answer_callback(cq_id)
 
-        # Admin Inline Panel Submenus
         elif data == "admin_main":
             if not is_admin(user_id):
                 answer_callback(cq_id, "Unauthorized")
@@ -425,7 +445,7 @@ def handle_update(update):
                     [{"text": "🔻 Close", "callback_data": "menu_close"}]
                 ]
             }
-            edit_message_text(chat_id, msg_id, admin_text, markup)
+            edit_message_caption(chat_id, msg_id, admin_text, markup)
             answer_callback(cq_id)
 
         elif data == "admin_keys":
@@ -441,7 +461,7 @@ def handle_update(update):
                 "<b>To Generate:</b> <code>/genkeys [count] [days]</code>"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "admin_main"}]]}
-            edit_message_text(chat_id, msg_id, text, markup)
+            edit_message_caption(chat_id, msg_id, text, markup)
             answer_callback(cq_id)
 
         elif data == "admin_sites":
@@ -457,7 +477,7 @@ def handle_update(update):
                 "<b>To Add:</b> <code>/addsite https://target.com</code>"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "admin_main"}]]}
-            edit_message_text(chat_id, msg_id, text, markup)
+            edit_message_caption(chat_id, msg_id, text, markup)
             answer_callback(cq_id)
 
         elif data == "admin_users":
@@ -472,7 +492,7 @@ def handle_update(update):
                 f"• <b>System Admins:</b> {len(db_get_admins())}"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "admin_main"}]]}
-            edit_message_text(chat_id, msg_id, text, markup)
+            edit_message_caption(chat_id, msg_id, text, markup)
             answer_callback(cq_id)
 
         elif data == "admin_amount":
@@ -486,7 +506,7 @@ def handle_update(update):
                 "<b>To Change:</b> <code>/setamount 10.00</code>"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "admin_main"}]]}
-            edit_message_text(chat_id, msg_id, text, markup)
+            edit_message_caption(chat_id, msg_id, text, markup)
             answer_callback(cq_id)
 
         elif data == "menu_start":
@@ -504,7 +524,7 @@ def handle_update(update):
                     [{"text": "🔄 My Profile", "callback_data": "menu_profile"}, {"text": "👑 Dev ↗", "url": "https://t.me/nativecodes"}]
                 ]
             }
-            edit_message_text(chat_id, msg_id, text, markup)
+            edit_message_caption(chat_id, msg_id, text, markup)
             answer_callback(cq_id)
 
         elif data == "menu_close":
@@ -527,7 +547,7 @@ def handle_update(update):
 
     # /start & /cmds
     if text.startswith("/start") or text.startswith("/cmds"):
-        start_text = (
+        start_caption = (
             "<b><i>🌈 W E L C O M E 🌈</i></b>\n"
             "<b>====================================</b>\n"
             "<b><i>)) Name →</i></b> Bandit 👑\n"
@@ -541,14 +561,14 @@ def handle_update(update):
                 [{"text": "🔄 My Profile", "callback_data": "menu_profile"}, {"text": "👑 Dev ↗", "url": "https://t.me/nativecodes"}]
             ]
         }
-        send_message(chat_id, start_text, markup)
+        send_photo(chat_id, BANNER_URL, start_caption, markup)
 
-    # Interactive Inline Admin Panel Trigger
+    # /admin
     elif text.startswith("/admin"):
         if not is_admin(user_id):
             send_message(chat_id, "❌ Unauthorized.")
             return
-        admin_text = (
+        admin_caption = (
             "<b><i>👑 A D M I N   C O N T R O L   P A N E L 👑</i></b>\n"
             "<b>====================================</b>\n"
             "Select a management submenu below:"
@@ -560,78 +580,9 @@ def handle_update(update):
                 [{"text": "🔻 Close", "callback_data": "menu_close"}]
             ]
         }
-        send_message(chat_id, admin_text, markup)
+        send_photo(chat_id, BANNER_URL, admin_caption, markup)
 
-    # Proxy Management
-    elif text.startswith("/proxy"):
-        parts = text.split(" ", 1)
-        if len(parts) < 2:
-            proxy_msg = (
-                "<b><i>🌀 I n v a l i d   F o r m a t 🌀</i></b>\n"
-                "<b>====================================</b>\n"
-                "<b><i>)) Please provide a proxy list with the command.</i></b>\n\n"
-                "📌 <b>Supported Formats:</b>\n"
-                "<b><i>= </i></b> IP:PORT\n"
-                "<b><i>= </i></b> IP:PORT:USER:PASS\n"
-                "<b><i>= </i></b> USER:PASS@IP:PORT\n\n"
-                "<b>Supported Types →</b> HTTP / SOCKS4 / SOCKS5\n"
-                "📊 <b>Max Limit →</b> 30 Proxies per user (Line by Line)\n\n"
-                "💡 <b>Example:</b>\n"
-                "<code>/proxy 198.51.100.1:8080</code>\n"
-                "<b>====================================</b>"
-            )
-            send_message(chat_id, proxy_msg)
-            return
-        new_proxy = parts[1].strip()
-        db_set_user_proxy(user_id, new_proxy)
-        send_message(chat_id, f"✅ Proxy successfully updated and saved:\n<code>{new_proxy}</code>")
-
-    elif text.startswith("/myproxy"):
-        proxy = db_get_user_proxy(user_id)
-        if proxy:
-            send_message(chat_id, f"🌐 <b>Current Saved Proxy:</b>\n<code>{proxy}</code>")
-        else:
-            send_message(chat_id, "⚠️ <b>No proxy configured.</b> Set one using <code>/proxy host:port:user:pass</code>")
-
-    elif text.startswith("/rmproxy"):
-        db_remove_user_proxy(user_id)
-        rm_msg = (
-            "<b>🗑 Proxies Removed 🗑</b>\n"
-            "====================================\n"
-            "All your saved proxies have been deleted successfully.\n\n"
-            "🌐 <b>Removed →</b> 0\n"
-            "====================================\n"
-            "🚀 <b>You now have add a fresh list.</b>"
-        )
-        send_message(chat_id, rm_msg)
-
-    elif text.startswith("/chkpxy"):
-        proxy = db_get_user_proxy(user_id)
-        if not proxy:
-            send_message(chat_id, "⚠️ No proxy configured to test.")
-            return
-        send_message(chat_id, f"⏳ Testing proxy <code>{proxy}</code>...")
-        try:
-            test_res = requests.get("https://api.ipify.org?format=json", proxies={"http": proxy, "https": proxy}, timeout=10)
-            if test_res.status_code == 200:
-                send_message(chat_id, f"✅ <b>Proxy is LIVE!</b> IP: {test_res.json().get('ip')}")
-            else:
-                send_message(chat_id, "❌ Proxy connection failed.")
-        except Exception:
-            send_message(chat_id, "❌ Proxy connection timed out or is invalid.")
-
-    # Feedback /f
-    elif text.startswith("/f"):
-        parts = text.split(" ", 1)
-        if len(parts) < 2 and not msg.get("reply_to_message"):
-            send_message(chat_id, "<b><i>Usage:</i></b> <code>/f [your message]</code>")
-            return
-        feedback_content = parts[1] if len(parts) > 1 else "(Image/Media Feedback)"
-        for aid in db_get_admins():
-            send_message(aid, f"📬 <b>New Feedback from @{uname} ({user_id}):</b>\n\n{feedback_content}")
-        send_message(chat_id, "✅ <b>Feedback sent successfully to admin!</b>")
-
-    # /st1 & /pp Single Checkers
+    # Single Checkers: /st1, /sh, /pp
     elif text.startswith("/st1") or text.startswith("/sh") or text.startswith("/pp"):
         is_pp = text.startswith("/pp")
         parts = text.split(" ", 1)
@@ -666,9 +617,12 @@ def handle_update(update):
             f"====================================\n"
             f"⚙️ <b>Dev:</b> @Poriot_ke 🇰🇪"
         )
-        send_message(chat_id, caption)
+        if is_ch or is_ap:
+            send_photo(chat_id, BANNER_URL, caption)
+        else:
+            send_message(chat_id, caption)
 
-    # /mst & /mpp Mass Checkers
+    # Mass Checkers: /mst, /msh, /mpp
     elif text.startswith("/mst") or text.startswith("/msh") or text.startswith("/mpp"):
         is_pp = text.startswith("/mpp")
         if not msg.get("reply_to_message") or not msg["reply_to_message"].get("document"):
@@ -726,12 +680,56 @@ def handle_update(update):
             "----------------------------------------\n"
             f"[=] <b>Checker</b> ~ 👾 @{uname}"
         )
-        if p_msg_id:
+        if charged > 0 or approved > 0:
+            send_photo(chat_id, BANNER_URL, report)
+        elif p_msg_id:
             edit_message_text(chat_id, p_msg_id, report)
         else:
             send_message(chat_id, report)
 
-    # /bin lookup
+    # Other Utilities
+    elif text.startswith("/proxy"):
+        parts = text.split(" ", 1)
+        if len(parts) < 2:
+            proxy_msg = (
+                "<b><i>🌀 I n v a l i d   F o r m a t 🌀</i></b>\n"
+                "<b>====================================</b>\n"
+                "<b><i>)) Please provide a proxy list with the command.</i></b>\n\n"
+                "📌 <b>Supported Formats:</b>\n"
+                "<b><i>= </i></b> IP:PORT\n"
+                "<b><i>= </i></b> IP:PORT:USER:PASS\n"
+                "<b><i>= </i></b> USER:PASS@IP:PORT\n\n"
+                "<b>Supported Types →</b> HTTP / SOCKS4 / SOCKS5\n"
+                "📊 <b>Max Limit →</b> 30 Proxies per user (Line by Line)\n\n"
+                "💡 <b>Example:</b>\n"
+                "<code>/proxy 198.51.100.1:8080</code>\n"
+                "<b>====================================</b>"
+            )
+            send_message(chat_id, proxy_msg)
+            return
+        new_proxy = parts[1].strip()
+        db_set_user_proxy(user_id, new_proxy)
+        send_message(chat_id, f"✅ Proxy successfully updated and saved:\n<code>{new_proxy}</code>")
+
+    elif text.startswith("/myproxy"):
+        proxy = db_get_user_proxy(user_id)
+        if proxy:
+            send_message(chat_id, f"🌐 <b>Current Saved Proxy:</b>\n<code>{proxy}</code>")
+        else:
+            send_message(chat_id, "⚠️ <b>No proxy configured.</b> Set one using <code>/proxy host:port:user:pass</code>")
+
+    elif text.startswith("/rmproxy"):
+        db_remove_user_proxy(user_id)
+        rm_msg = (
+            "<b>🗑 Proxies Removed 🗑</b>\n"
+            "====================================\n"
+            "All your saved proxies have been deleted successfully.\n\n"
+            "🌐 <b>Removed →</b> 0\n"
+            "====================================\n"
+            "🚀 <b>You now have add a fresh list.</b>"
+        )
+        send_message(chat_id, rm_msg)
+
     elif text.startswith("/bin"):
         parts = text.split(" ", 1)
         if len(parts) < 2:
@@ -749,7 +747,16 @@ def handle_update(update):
         )
         send_message(chat_id, bin_rep)
 
-    # /addsite & /sites
+    elif text.startswith("/f"):
+        parts = text.split(" ", 1)
+        if len(parts) < 2 and not msg.get("reply_to_message"):
+            send_message(chat_id, "<b><i>Usage:</i></b> <code>/f [your message]</code>")
+            return
+        feedback_content = parts[1] if len(parts) > 1 else "(Image/Media Feedback)"
+        for aid in db_get_admins():
+            send_message(aid, f"📬 <b>New Feedback from @{uname} ({user_id}):</b>\n\n{feedback_content}")
+        send_message(chat_id, "✅ <b>Feedback sent successfully to admin!</b>")
+
     elif text.startswith("/addsite"):
         if not is_admin(user_id):
             send_message(chat_id, "❌ Unauthorized.")
@@ -772,7 +779,6 @@ def handle_update(update):
         sites = load_sites()
         send_message(chat_id, f"<b><i>🌐 Loaded Sites in sites.txt:</i></b>\n" + "\n".join([f"• <code>{s}</code>" for s in sites[:20]]))
 
-    # /setamount
     elif text.startswith("/setamount"):
         if not is_admin(user_id):
             send_message(chat_id, "❌ Unauthorized.")
@@ -788,7 +794,6 @@ def handle_update(update):
         except ValueError:
             send_message(chat_id, "❌ Invalid format.")
 
-    # /genkeys
     elif text.startswith("/genkeys"):
         if not is_admin(user_id):
             send_message(chat_id, "❌ Unauthorized.")
@@ -801,7 +806,6 @@ def handle_update(update):
         keys = db_create_licenses(count, days, user_id)
         send_message(chat_id, f"<b><i>📌🔥 Keys Generated ✅</i></b>\n\n" + "\n".join([f"├💖 <code>{k}</code>" for k in keys]) + "\n\n😈 Redeem with <code>/redeem [key]</code>")
 
-    # /redeem
     elif text.startswith("/redeem"):
         args = text.split()[1:]
         if not args:
