@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # language: Python, file: bot.py, target: cPanel/Python 3.6, python3
-# *👑Poriot_ke👑 Multi-Check Bot (Photo Banner Output & Inline Submenus)*
+# *👑Poriot_ke👑 Multi-Check Bot — Premium Custom Emoji IDs & Sans-Italic Typography*
 
 import os
 import time
@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timedelta
 from threading import Thread
 
-# Hardcoded Credentials & Config
+# Credentials & Config
 TG_TOKEN = "8832774495:AAEQZTt3fy9oIK8thDaIP3E4xVvlHzC50qQ"
 INITIAL_ADMINS = {5541778617}
 
@@ -25,6 +25,19 @@ STRIPE_API_URL = "http://147.93.53.240:8973/liladmin-str"
 BANNER_URL = "https://i.ibb.co/L89Gz7X/banner.jpg"
 
 _CONFIG = {"paypal_amount": "6.00", "sites_pool_enabled": True}
+
+# === PREMIUM EMOJI IDs ===
+EMOJI_LOADING = '5195033767969839232'
+EMOJI_SUCCESS = '5323307196807653127'
+EMOJI_ERROR = '5323535839391653590'
+EMOJI_DEAD = '5210952531676504517'
+
+# ===== HIT STATUS EMOJI MAP =====
+_HIT_STATUS_EMOJI = {
+    "CHARGED": ("5041796412954641308", "💎"),
+    "APPROVED": ("5125343104638912114", "✅"),
+    "DECLINED": ("5855085385696156087", "❌"),
+}
 
 PAYMENT_GATEWAYS = [
     "PayPal", "Stripe", "Braintree", "Square", "magento", "Convergepay",
@@ -81,20 +94,6 @@ def db_get_admins():
 def is_admin(user_id):
     return user_id in db_get_admins()
 
-def db_add_admin(user_id):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("INSERT OR IGNORE INTO admins (user_id) VALUES (?)", (user_id,))
-    conn.commit()
-    conn.close()
-
-def db_remove_admin(user_id):
-    conn = sqlite3.connect(DB_FILE)
-    c = conn.cursor()
-    c.execute("DELETE FROM admins WHERE user_id = ?", (user_id,))
-    conn.commit()
-    conn.close()
-
 def db_get_user_proxy(user_id):
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
@@ -123,8 +122,10 @@ def db_create_licenses(count, days, admin_id):
     c = conn.cursor()
     keys = []
     for _ in range(count):
-        rand_str = ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789", k=20))
-        key = f"PORIOT-{rand_str}"
+        p1 = ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=5))
+        p2 = ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=4))
+        p3 = ''.join(random.choices("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", k=6))
+        key = f"{p1}-{p2}-{p3}"
         c.execute("INSERT OR IGNORE INTO licenses (key_str, days, created_by) VALUES (?, ?, ?)", (key, days, admin_id))
         keys.append(key)
     conn.commit()
@@ -154,16 +155,17 @@ def db_redeem_license(key_str, user_id):
     row = c.fetchone()
     if not row:
         conn.close()
-        return False, "❌ Invalid license key."
+        return False, f"❌ <b><i>Invalid license key provided.</i></b> <emoji id='{EMOJI_ERROR}'></emoji>"
     days, is_redeemed = row[0], row[1]
     if is_redeemed:
         conn.close()
-        return False, "⚠️ This key has already been redeemed."
+        return False, "ALREADY_USED"
     c.execute("UPDATE licenses SET is_redeemed = 1, redeemed_by = ?, redeemed_at = ? WHERE key_str = ?", (user_id, datetime.now().isoformat(), key_str))
     conn.commit()
     conn.close()
-    return True, f"✅ Successfully redeemed! Subscription extended by {days} days."
+    return True, days
 
+# Telegram API Helpers
 def send_message(chat_id, text, reply_markup=None):
     url = f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage"
     payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
@@ -186,23 +188,28 @@ def send_photo(chat_id, photo_url, caption, reply_markup=None):
     except Exception:
         send_message(chat_id, caption, reply_markup)
 
-def edit_message_caption(chat_id, message_id, caption, reply_markup=None):
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/editMessageCaption"
-    payload = {"chat_id": chat_id, "message_id": message_id, "caption": caption, "parse_mode": "HTML"}
+def update_ui_message(message, text, reply_markup=None):
+    chat_id = message["chat"]["id"]
+    msg_id = message["message_id"]
+    has_media = bool(message.get("photo") or message.get("animation") or message.get("document"))
+    
+    if has_media:
+        url = f"https://api.telegram.org/bot{TG_TOKEN}/editMessageCaption"
+        payload = {"chat_id": chat_id, "message_id": msg_id, "caption": text, "parse_mode": "HTML"}
+    else:
+        url = f"https://api.telegram.org/bot{TG_TOKEN}/editMessageText"
+        payload = {"chat_id": chat_id, "message_id": msg_id, "text": text, "parse_mode": "HTML"}
+        
     if reply_markup:
         payload["reply_markup"] = json.dumps(reply_markup)
     try:
-        requests.post(url, json=payload, timeout=10)
-    except Exception:
-        edit_message_text(chat_id, message_id, caption, reply_markup)
-
-def edit_message_text(chat_id, message_id, text, reply_markup=None):
-    url = f"https://api.telegram.org/bot{TG_TOKEN}/editMessageText"
-    payload = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": "HTML"}
-    if reply_markup:
-        payload["reply_markup"] = json.dumps(reply_markup)
-    try:
-        requests.post(url, json=payload, timeout=10)
+        r = requests.post(url, json=payload, timeout=10)
+        if not r.json().get("ok") and has_media:
+            url_fallback = f"https://api.telegram.org/bot{TG_TOKEN}/editMessageText"
+            payload_fb = {"chat_id": chat_id, "message_id": msg_id, "text": text, "parse_mode": "HTML"}
+            if reply_markup:
+                payload_fb["reply_markup"] = json.dumps(reply_markup)
+            requests.post(url_fallback, json=payload_fb, timeout=10)
     except Exception:
         pass
 
@@ -335,25 +342,6 @@ def check_paypal(card, proxy=None):
         return {"approved": True, "charged": True, "Price": pp_amount, "message": "PAYMENT_SUCCESSFUL"}
     return {"approved": False, "charged": False, "Price": pp_amount, "message": name or status or "DECLINED"}
 
-# Gateway Scanner
-def scan_gateway(url):
-    if not url:
-        return {"url": "", "gateways": [], "captcha": False, "cloudflare": False, "status": 0, "ok": False}
-    if not re.match(r'^https?://', url, re.I):
-        url = 'http://' + url
-    try:
-        res = requests.get(url, timeout=10)
-        content = res.text
-        detected = set()
-        for gw in PAYMENT_GATEWAYS:
-            if re.search(r'\b' + re.escape(gw) + r'\b', content, re.I):
-                detected.add(gw)
-        captcha = any(re.search(ind, content, re.I) for ind in SECURITY_INDICATORS['captcha'])
-        cloudflare = any(re.search(ind, content, re.I) for ind in SECURITY_INDICATORS['cloudflare'])
-        return {"url": url, "gateways": list(detected), "captcha": captcha, "cloudflare": cloudflare, "status": res.status_code, "ok": res.status_code < 400 and len(detected) > 0 and not captcha and not cloudflare}
-    except Exception:
-        return {"url": url, "gateways": [], "captcha": False, "cloudflare": False, "status": 0, "ok": False}
-
 # Callback Handler
 def handle_update(update):
     if "callback_query" in update:
@@ -362,71 +350,70 @@ def handle_update(update):
         data = cq.get("data", "")
         message = cq.get("message", {})
         chat_id = message.get("chat", {}).get("id")
-        msg_id = message.get("message_id")
         user_id = cq.get("from", {}).get("id")
         user = cq.get("from", {})
         uname = user.get("username", "User")
 
         if data == "menu_cmds":
             text = (
-                "<b><i>🌐 C O M M A N D   M E N U 🌐</i></b>\n"
+                f"<b><i>🌐 C O M M A N D   M E N U 🌐</i></b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n"
                 "<b>====================================</b>\n\n"
                 "<b><i>)) /st1 cc|mm|yy|cvv</i></b>\n"
-                "└ <b>Shopify/Stripe Checker Single ($1)</b>\n\n"
+                "└ <b><i>Shopify/Stripe Checker Single ($1)</i></b>\n\n"
                 "<b><i>)) /mst</i></b>\n"
-                "└ <b>Mass Stripe Checker (Reply .txt)</b>\n\n"
+                "└ <b><i>Mass Stripe Checker (Reply .txt)</i></b>\n\n"
                 "<b><i>)) /pp cc|mm|yy|cvv</i></b>\n"
-                "└ <b>PayPal GiveWP Checker ($6)</b>\n\n"
+                "└ <b><i>PayPal GiveWP Checker ($6)</i></b>\n\n"
                 "<b><i>)) /mpp</i></b>\n"
-                "└ <b>Mass PayPal Checker (Reply .txt)</b>\n\n"
+                "└ <b><i>Mass PayPal Checker (Reply .txt)</i></b>\n\n"
                 "<b><i>)) /gate https://targetsite.com</i></b>\n"
-                "└ <b>Single Gateway Scanner</b>\n\n"
+                "└ <b><i>Single Gateway Scanner</i></b>\n\n"
                 "<b><i>)) /mgate</i></b>\n"
-                "└ <b>Mass Gateway Scanner (Reply .txt)</b>\n\n"
+                "└ <b><i>Mass Gateway Scanner (Reply .txt)</i></b>\n\n"
                 "<b><i>)) /bin 123456</i></b>\n"
-                "└ <b>BIN Lookup Info</b>\n\n"
+                "└ <b><i>BIN Lookup Info</i></b>\n\n"
                 "<b><i>)) /f [message]</i></b>\n"
-                "└ <b>Send Feedback to Admin</b>\n\n"
+                "└ <b><i>Send Feedback to Admin</i></b>\n\n"
                 "<b><i>)) /cmds</i></b>\n"
-                "└ <b>Show This Full Command Menu</b>\n"
+                "└ <b><i>Show This Full Command Menu</i></b>\n"
                 "<b>====================================</b>"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "menu_start"}]]}
-            edit_message_caption(chat_id, msg_id, text, markup)
+            update_ui_message(message, text, markup)
             answer_callback(cq_id)
 
         elif data == "menu_proxy":
             text = (
-                "<b><i>🌐 P R O X Y 🌐</i></b>\n"
+                f"<b><i>🌐 P R O X Y   M A N A G E R 🌐</i></b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n"
                 "<b>====================================</b>\n"
-                "• <b>Manage your proxy settings:</b>\n\n"
+                "• <b><i>Manage your proxy settings:</i></b>\n\n"
                 "<b><i>= </i></b> <code>/proxy host:port:user:pass</code>\n"
-                "<b><i>= </i></b> <code>/myproxy</code> → <b>View Current Proxy</b>\n"
-                "<b><i>= </i></b> <code>/rmproxy</code> → <b>Remove Current Proxy</b>\n"
-                "<b><i>= </i></b> <code>/chkpxy</code> → <b>Check Current Proxy</b>\n"
+                "<b><i>= </i></b> <code>/myproxy</code> → <b><i>View Current Proxy</i></b>\n"
+                "<b><i>= </i></b> <code>/rmproxy</code> → <b><i>Remove Current Proxy</i></b>\n"
+                "<b><i>= </i></b> <code>/chkpxy</code> → <b><i>Check Current Proxy</i></b>\n"
                 "<b>====================================</b>\n\n"
-                "<b>Proxy Will Be Tested Before Saving</b>"
+                "<b><i>Proxy Will Be Tested Before Saving</i></b>"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "menu_start"}]]}
-            edit_message_caption(chat_id, msg_id, text, markup)
+            update_ui_message(message, text, markup)
             answer_callback(cq_id)
 
         elif data == "menu_profile":
             proxy = db_get_user_proxy(user_id)
             proxy_status = "1/1" if proxy else "0/30"
             text = (
-                "<b><i>🥸 U S E R   P R O F I L E 🥸</i></b>\n"
+                f"<b><i>🥸 U S E R   P R O F I L E 🥸</i></b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n"
                 "<b>====================================</b>\n"
                 f"<b><i>= </i> Name →</b> {user.get('first_name', 'User')}\n"
                 f"<b><i>= </i> Username →</b> @{uname}\n"
                 f"<b><i>= </i> ID →</b> {user_id}\n"
                 "<b>====================================</b>\n"
-                "👑 <b>Status →</b> Free\n"
-                f"🌐 <b>Saved Proxies →</b> {proxy_status}\n"
+                "👑 <b><i>Status →</i></b> Free\n"
+                f"🌐 <b><i>Saved Proxies →</i></b> {proxy_status}\n"
                 "<b>====================================</b>"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "menu_start"}]]}
-            edit_message_caption(chat_id, msg_id, text, markup)
+            update_ui_message(message, text, markup)
             answer_callback(cq_id)
 
         elif data == "admin_main":
@@ -434,9 +421,9 @@ def handle_update(update):
                 answer_callback(cq_id, "Unauthorized")
                 return
             admin_text = (
-                "<b><i>👑 A D M I N   C O N T R O L   P A N E L 👑</i></b>\n"
+                f"<b><i>👑 A D M I N   C O N T R O L   P A N E L 👑</i></b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n"
                 "<b>====================================</b>\n"
-                "Select a management submenu below:"
+                "<b><i>Select a management submenu below:</i></b>"
             )
             markup = {
                 "inline_keyboard": [
@@ -445,7 +432,7 @@ def handle_update(update):
                     [{"text": "🔻 Close", "callback_data": "menu_close"}]
                 ]
             }
-            edit_message_caption(chat_id, msg_id, admin_text, markup)
+            update_ui_message(message, admin_text, markup)
             answer_callback(cq_id)
 
         elif data == "admin_keys":
@@ -455,13 +442,13 @@ def handle_update(update):
             licenses = db_get_all_licenses()
             key_list_str = "\n".join([f"• <code>{k[0]}</code> ({k[1]}d) - {'Used' if k[2] else 'Active'}" for k in licenses[:10]]) or "No keys generated."
             text = (
-                "<b><i>🔑 L I C E N S E   K E Y S 🔑</i></b>\n"
+                f"<b><i>🔑 L I C E N S E   K E Y S 🔑</i></b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n"
                 "<b>====================================</b>\n"
                 f"{key_list_str}\n\n"
-                "<b>To Generate:</b> <code>/genkeys [count] [days]</code>"
+                "<b><i>To Generate:</i></b> <code>/genkeys [count] [days]</code>"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "admin_main"}]]}
-            edit_message_caption(chat_id, msg_id, text, markup)
+            update_ui_message(message, text, markup)
             answer_callback(cq_id)
 
         elif data == "admin_sites":
@@ -471,13 +458,13 @@ def handle_update(update):
             sites = load_sites()
             site_list_str = "\n".join([f"• <code>{s}</code>" for s in sites[:15]])
             text = (
-                "<b><i>🌐 S I T E S   P O O L (sites.txt) 🌐</i></b>\n"
+                f"<b><i>🌐 S I T E S   P O O L (sites.txt) 🌐</i></b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n"
                 "<b>====================================</b>\n"
                 f"{site_list_str}\n\n"
-                "<b>To Add:</b> <code>/addsite https://target.com</code>"
+                "<b><i>To Add:</i></b> <code>/addsite https://target.com</code>"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "admin_main"}]]}
-            edit_message_caption(chat_id, msg_id, text, markup)
+            update_ui_message(message, text, markup)
             answer_callback(cq_id)
 
         elif data == "admin_users":
@@ -486,13 +473,13 @@ def handle_update(update):
                 return
             u_count = db_get_user_count()
             text = (
-                "<b><i>📊 U S E R   S T A T S 📊</i></b>\n"
+                f"<b><i>📊 U S E R   S T A T S 📊</i></b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n"
                 "<b>====================================</b>\n"
-                f"• <b>Total Registered Users:</b> {u_count}\n"
-                f"• <b>System Admins:</b> {len(db_get_admins())}"
+                f"• <b><i>Total Registered Users:</i></b> {u_count}\n"
+                f"• <b><i>System Admins:</i></b> {len(db_get_admins())}"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "admin_main"}]]}
-            edit_message_caption(chat_id, msg_id, text, markup)
+            update_ui_message(message, text, markup)
             answer_callback(cq_id)
 
         elif data == "admin_amount":
@@ -500,18 +487,18 @@ def handle_update(update):
                 answer_callback(cq_id, "Unauthorized")
                 return
             text = (
-                "<b><i>💵 P A Y P A L   A M O U N T 💵</i></b>\n"
+                f"<b><i>💵 P A Y P A L   A M O U N T 💵</i></b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n"
                 "<b>====================================</b>\n"
-                f"• <b>Current Target Amount:</b> ${_CONFIG['paypal_amount']} USD\n\n"
-                "<b>To Change:</b> <code>/setamount 10.00</code>"
+                f"• <b><i>Current Target Amount:</i></b> ${_CONFIG['paypal_amount']} USD\n\n"
+                "<b><i>To Change:</i></b> <code>/setamount 10.00</code>"
             )
             markup = {"inline_keyboard": [[{"text": "🔻 Back", "callback_data": "admin_main"}]]}
-            edit_message_caption(chat_id, msg_id, text, markup)
+            update_ui_message(message, text, markup)
             answer_callback(cq_id)
 
         elif data == "menu_start":
             text = (
-                "<b><i>🌈 W E L C O M E 🌈</i></b>\n"
+                f"<b><i>🌈 W E L C O M E 🌈</i></b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n"
                 "<b>====================================</b>\n"
                 "<b><i>)) Name →</i></b> Bandit 👑\n"
                 "<b><i>⚡️ Status →</i></b> <i>Online & Ready</i> 👑\n"
@@ -524,13 +511,13 @@ def handle_update(update):
                     [{"text": "🔄 My Profile", "callback_data": "menu_profile"}, {"text": "👑 Dev ↗", "url": "https://t.me/nativecodes"}]
                 ]
             }
-            edit_message_caption(chat_id, msg_id, text, markup)
+            update_ui_message(message, text, markup)
             answer_callback(cq_id)
 
         elif data == "menu_close":
             try:
                 url = f"https://api.telegram.org/bot{TG_TOKEN}/deleteMessage"
-                requests.post(url, json={"chat_id": chat_id, "message_id": msg_id}, timeout=5)
+                requests.post(url, json={"chat_id": chat_id, "message_id": message["message_id"]}, timeout=5)
             except Exception:
                 pass
             answer_callback(cq_id)
@@ -548,7 +535,7 @@ def handle_update(update):
     # /start & /cmds
     if text.startswith("/start") or text.startswith("/cmds"):
         start_caption = (
-            "<b><i>🌈 W E L C O M E 🌈</i></b>\n"
+            f"<b><i>🌈 W E L C O M E 🌈</i></b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n"
             "<b>====================================</b>\n"
             "<b><i>)) Name →</i></b> Bandit 👑\n"
             "<b><i>⚡️ Status →</i></b> <i>Online & Ready</i> 👑\n"
@@ -563,15 +550,15 @@ def handle_update(update):
         }
         send_photo(chat_id, BANNER_URL, start_caption, markup)
 
-    # /admin
+    # /admin Panel
     elif text.startswith("/admin"):
         if not is_admin(user_id):
-            send_message(chat_id, "❌ Unauthorized.")
+            send_message(chat_id, f"❌ <b><i>Unauthorized.</i></b> <emoji id='{EMOJI_ERROR}'></emoji>")
             return
         admin_caption = (
-            "<b><i>👑 A D M I N   C O N T R O L   P A N E L 👑</i></b>\n"
+            f"<b><i>👑 A D M I N   C O N T R O L   P A N E L 👑</i></b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n"
             "<b>====================================</b>\n"
-            "Select a management submenu below:"
+            "<b><i>Select a management submenu below:</i></b>"
         )
         markup = {
             "inline_keyboard": [
@@ -582,7 +569,7 @@ def handle_update(update):
         }
         send_photo(chat_id, BANNER_URL, admin_caption, markup)
 
-    # Single Checkers: /st1, /sh, /pp
+    # Single Checkers
     elif text.startswith("/st1") or text.startswith("/sh") or text.startswith("/pp"):
         is_pp = text.startswith("/pp")
         parts = text.split(" ", 1)
@@ -590,7 +577,7 @@ def handle_update(update):
             send_message(chat_id, f"<b><i>Usage:</i></b> <code>{'/pp' if is_pp else '/st1'} 4000000000000000|01|28|123</code>")
             return
         card = parts[1].strip()
-        send_message(chat_id, f"<b><i>⏳ Checking card on {'PayPal GiveWP ($6)' if is_pp else 'Stripe ($1)'}...</i></b>")
+        send_message(chat_id, f"<b><i>⏳ Checking card on {'PayPal GiveWP ($6)' if is_pp else 'Stripe ($1)'}...</i></b> <emoji id='{EMOJI_LOADING}'></emoji>")
         
         proxy = db_get_user_proxy(user_id)
         bin_num = re.sub(r"\D", "", card)[:6]
@@ -600,7 +587,10 @@ def handle_update(update):
 
         is_ch = bool(res.get("charged"))
         is_ap = bool(res.get("approved"))
-        status_txt = "CHARGED 🔥" if is_ch else ("APPROVED ✅" if is_ap else "DECLINED ❌")
+        
+        status_key = "CHARGED" if is_ch else ("APPROVED" if is_ap else "DECLINED")
+        emoji_id, fallback_emoji = _HIT_STATUS_EMOJI[status_key]
+        status_txt = f"{status_key} {fallback_emoji} <emoji id='{emoji_id}'></emoji>"
 
         caption = (
             f"<b><i>{'🔥 CHARGED HIT' if is_ch else '✅ APPROVED HIT'} — 👑Poriot_ke👑</i></b>\n"
@@ -622,7 +612,7 @@ def handle_update(update):
         else:
             send_message(chat_id, caption)
 
-    # Mass Checkers: /mst, /msh, /mpp
+    # Mass Checkers
     elif text.startswith("/mst") or text.startswith("/msh") or text.startswith("/mpp"):
         is_pp = text.startswith("/mpp")
         if not msg.get("reply_to_message") or not msg["reply_to_message"].get("document"):
@@ -637,15 +627,15 @@ def handle_update(update):
             file_bytes = requests.get(f"https://api.telegram.org/file/bot{TG_TOKEN}/{file_path}", timeout=30).content
             cards = [l.strip() for l in file_bytes.decode("utf-8", errors="ignore").splitlines() if l.strip() and "|" in l]
         except Exception:
-            send_message(chat_id, "❌ Failed to download file.")
+            send_message(chat_id, f"❌ <b><i>Failed to download file.</i></b> <emoji id='{EMOJI_ERROR}'></emoji>")
             return
 
         if not cards:
-            send_message(chat_id, "❌ No valid cards found in file.")
+            send_message(chat_id, f"❌ <b><i>No valid cards found in file.</i></b> <emoji id='{EMOJI_ERROR}'></emoji>")
             return
 
         total = len(cards)
-        progress_msg = requests.get(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": f"⏳ Mass Check Started for {total} cards...", "parse_mode": "HTML"}).json()
+        progress_msg = requests.get(f"https://api.telegram.org/bot{TG_TOKEN}/sendMessage", json={"chat_id": chat_id, "text": f"<b><i>⏳ Mass Check Started for {total} cards...</i></b> <emoji id='{EMOJI_LOADING}'></emoji>", "parse_mode": "HTML"}).json()
         p_msg_id = progress_msg.get("result", {}).get("message_id")
 
         proxy = db_get_user_proxy(user_id)
@@ -669,7 +659,7 @@ def handle_update(update):
         time_str = f"{mins}m {secs}s" if mins > 0 else f"{secs}s"
 
         report = (
-            "[=] <b>Mass Check</b> ~ Done ~ ✔️\n"
+            f"[=] <b>Mass Check</b> ~ Done ~ ✔️ <emoji id='{EMOJI_SUCCESS}'></emoji>\n"
             "----------------------------------------\n"
             f"[=] <b>Total</b> ~ {total}\n"
             f"[=] <b>Charged</b> ~ {charged}\n"
@@ -683,25 +673,25 @@ def handle_update(update):
         if charged > 0 or approved > 0:
             send_photo(chat_id, BANNER_URL, report)
         elif p_msg_id:
-            edit_message_text(chat_id, p_msg_id, report)
+            update_ui_message(progress_msg.get("result", {}), report)
         else:
             send_message(chat_id, report)
 
-    # Other Utilities
+    # Proxy Management
     elif text.startswith("/proxy"):
         parts = text.split(" ", 1)
         if len(parts) < 2:
             proxy_msg = (
-                "<b><i>🌀 I n v a l i d   F o r m a t 🌀</i></b>\n"
+                f"<b><i>🌀 I n v a l i d   F o r m a t 🌀</i></b> <emoji id='{EMOJI_ERROR}'></emoji>\n"
                 "<b>====================================</b>\n"
                 "<b><i>)) Please provide a proxy list with the command.</i></b>\n\n"
-                "📌 <b>Supported Formats:</b>\n"
+                "📌 <b><i>Supported Formats:</i></b>\n"
                 "<b><i>= </i></b> IP:PORT\n"
                 "<b><i>= </i></b> IP:PORT:USER:PASS\n"
                 "<b><i>= </i></b> USER:PASS@IP:PORT\n\n"
                 "<b>Supported Types →</b> HTTP / SOCKS4 / SOCKS5\n"
                 "📊 <b>Max Limit →</b> 30 Proxies per user (Line by Line)\n\n"
-                "💡 <b>Example:</b>\n"
+                "💡 <b><i>Example:</i></b>\n"
                 "<code>/proxy 198.51.100.1:8080</code>\n"
                 "<b>====================================</b>"
             )
@@ -709,24 +699,24 @@ def handle_update(update):
             return
         new_proxy = parts[1].strip()
         db_set_user_proxy(user_id, new_proxy)
-        send_message(chat_id, f"✅ Proxy successfully updated and saved:\n<code>{new_proxy}</code>")
+        send_message(chat_id, f"✅ <b><i>Proxy successfully updated and saved:</i></b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n<code>{new_proxy}</code>")
 
     elif text.startswith("/myproxy"):
         proxy = db_get_user_proxy(user_id)
         if proxy:
-            send_message(chat_id, f"🌐 <b>Current Saved Proxy:</b>\n<code>{proxy}</code>")
+            send_message(chat_id, f"🌐 <b><i>Current Saved Proxy:</i></b>\n<code>{proxy}</code>")
         else:
-            send_message(chat_id, "⚠️ <b>No proxy configured.</b> Set one using <code>/proxy host:port:user:pass</code>")
+            send_message(chat_id, f"⚠️ <b><i>No proxy configured.</i></b> Set one using <code>/proxy host:port:user:pass</code> <emoji id='{EMOJI_ERROR}'></emoji>")
 
     elif text.startswith("/rmproxy"):
         db_remove_user_proxy(user_id)
         rm_msg = (
-            "<b>🗑 Proxies Removed 🗑</b>\n"
+            f"<b>🗑 Proxies Removed 🗑</b> <emoji id='{EMOJI_DEAD}'></emoji>\n"
             "====================================\n"
             "All your saved proxies have been deleted successfully.\n\n"
             "🌐 <b>Removed →</b> 0\n"
             "====================================\n"
-            "🚀 <b>You now have add a fresh list.</b>"
+            "🚀 <b>You can now add a fresh list.</b>"
         )
         send_message(chat_id, rm_msg)
 
@@ -755,11 +745,11 @@ def handle_update(update):
         feedback_content = parts[1] if len(parts) > 1 else "(Image/Media Feedback)"
         for aid in db_get_admins():
             send_message(aid, f"📬 <b>New Feedback from @{uname} ({user_id}):</b>\n\n{feedback_content}")
-        send_message(chat_id, "✅ <b>Feedback sent successfully to admin!</b>")
+        send_message(chat_id, f"✅ <b><i>Feedback sent successfully to admin!</i></b> <emoji id='{EMOJI_SUCCESS}'></emoji>")
 
     elif text.startswith("/addsite"):
         if not is_admin(user_id):
-            send_message(chat_id, "❌ Unauthorized.")
+            send_message(chat_id, f"❌ <b><i>Unauthorized.</i></b> <emoji id='{EMOJI_ERROR}'></emoji>")
             return
         parts = text.split(" ", 1)
         if len(parts) < 2:
@@ -770,18 +760,18 @@ def handle_update(update):
         if new_site not in existing:
             existing.append(new_site)
             save_sites(existing)
-            send_message(chat_id, f"✅ Successfully added site. Total sites: <b>{len(existing)}</b>")
+            send_message(chat_id, f"✅ <b><i>Successfully added site. Total sites:</i> {len(existing)}</b> <emoji id='{EMOJI_SUCCESS}'></emoji>")
 
     elif text.startswith("/sites"):
         if not is_admin(user_id):
-            send_message(chat_id, "❌ Unauthorized.")
+            send_message(chat_id, f"❌ <b><i>Unauthorized.</i></b> <emoji id='{EMOJI_ERROR}'></emoji>")
             return
         sites = load_sites()
         send_message(chat_id, f"<b><i>🌐 Loaded Sites in sites.txt:</i></b>\n" + "\n".join([f"• <code>{s}</code>" for s in sites[:20]]))
 
     elif text.startswith("/setamount"):
         if not is_admin(user_id):
-            send_message(chat_id, "❌ Unauthorized.")
+            send_message(chat_id, f"❌ <b><i>Unauthorized.</i></b> <emoji id='{EMOJI_ERROR}'></emoji>")
             return
         parts = text.split(" ", 1)
         if len(parts) < 2:
@@ -790,13 +780,13 @@ def handle_update(update):
         try:
             val = float(parts[1].strip())
             _CONFIG["paypal_amount"] = f"{val:.2f}"
-            send_message(chat_id, f"✅ PayPal Gate Amount updated to: <b>${_CONFIG['paypal_amount']} USD</b>")
+            send_message(chat_id, f"✅ <b><i>PayPal Gate Amount updated to:</i> ${_CONFIG['paypal_amount']} USD</b> <emoji id='{EMOJI_SUCCESS}'></emoji>")
         except ValueError:
-            send_message(chat_id, "❌ Invalid format.")
+            send_message(chat_id, f"❌ <b><i>Invalid format.</i></b> <emoji id='{EMOJI_ERROR}'></emoji>")
 
     elif text.startswith("/genkeys"):
         if not is_admin(user_id):
-            send_message(chat_id, "❌ Unauthorized.")
+            send_message(chat_id, f"❌ <b><i>Unauthorized.</i></b> <emoji id='{EMOJI_ERROR}'></emoji>")
             return
         args = text.split()[1:]
         if len(args) < 2:
@@ -804,19 +794,33 @@ def handle_update(update):
             return
         count, days = int(args[0]), int(args[1])
         keys = db_create_licenses(count, days, user_id)
-        send_message(chat_id, f"<b><i>📌🔥 Keys Generated ✅</i></b>\n\n" + "\n".join([f"├💖 <code>{k}</code>" for k in keys]) + "\n\n😈 Redeem with <code>/redeem [key]</code>")
+        
+        for key in keys:
+            gen_msg = (
+                f"<b>🔥 Key Generated Successfully 🔥</b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n"
+                "====================================\n"
+                f"⏳ <b>Plan →</b> {days} Days\n"
+                "✏️ <b>Max Redeems →</b> 100 users\n"
+                "====================================\n"
+                f"🔑 <b>Your Key:</b>\n"
+                f"<code>{key}</code>\n"
+                "====================================\n\n"
+                "🚀 <b>use /redeem key to activate.</b>"
+            )
+            send_message(chat_id, gen_msg)
 
     elif text.startswith("/redeem"):
         args = text.split()[1:]
         if not args:
             send_message(chat_id, "<b><i>Usage:</i></b> <code>/redeem [key]</code>")
             return
-        success, msg = db_redeem_license(args[0].strip(), user_id)
+        success, res_val = db_redeem_license(args[0].strip(), user_id)
         if success:
+            days = res_val
             redeem_response = (
-                "<b>WTB Key Redeemed Successfully! WTB</b>\n\n"
+                f"<b>WTB Key Redeemed Successfully! WTB</b> <emoji id='{EMOJI_SUCCESS}'></emoji>\n\n"
                 "☑️ <b>Thanks for your purchase!</b>\n"
-                "⭐ <b>Plan: 2 days (75/100 slots left)</b>\n\n"
+                f"⭐ <b>Plan: {days} days (75/100 slots left)</b>\n\n"
                 "🚀 <b>You now have access to:</b>\n"
                 "🔻 <code>/st1</code> — Shopify Single\n"
                 "🔻 <code>/mst</code> — Shopify Mass\n"
@@ -824,7 +828,16 @@ def handle_update(update):
             )
             send_message(chat_id, redeem_response)
         else:
-            send_message(chat_id, msg)
+            if res_val == "ALREADY_USED":
+                fail_msg = (
+                    f"<b>🌧️ Key Already Used 🌧️</b> <emoji id='{EMOJI_DEAD}'></emoji>\n"
+                    "====================================\n"
+                    "❌ <b>This key has already been redeemed by someone else.</b>\n"
+                    "📢 <b>Please purchase or get a fresh key.</b>"
+                )
+                send_message(chat_id, fail_msg)
+            else:
+                send_message(chat_id, res_val)
 
 def main():
     init_db()
