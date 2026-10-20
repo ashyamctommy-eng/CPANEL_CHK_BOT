@@ -39,8 +39,8 @@ SITES_FILE    = "sites.txt"
 PROXY_FILE    = "proxies.txt"
 DB_FILE       = "checker_bot.db"
 
-TG_TOKEN      = "8218903349:XXXXXXXXXXX"
-INITIAL_ADMINS: Set[int] = {8909825938}
+TG_TOKEN      = "8832774495:AAEQZTt3fy9oIK8thDaIP3E4xVvlHzC50qQ"
+INITIAL_ADMINS: Set[int] = {5541778617}
 
 BANNER_URL    = "https://cdn.pic.re/3b/3b0bcb417600768d2430a94e3e544183.jpg"
 HTTP_TIMEOUT  = 120
